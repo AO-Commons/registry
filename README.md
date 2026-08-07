@@ -1,12 +1,12 @@
 # AO Commons — Registry
 
-A public registry of **autonomous organizations**: organizations in which AI agents hold meaningful operational or governance roles alongside humans.
+A public registry of **autonomous organizations**: organizations in which AI agents hold meaningful leadership, operational or governance roles, alongside humans or fully autonomously.
 
-Maintained by [AO Commons](https://github.com/AO-Commons), under Stanford Open Lab.
+Maintained by [AO Commons](https://github.com/AO-Commons), created by Stanford Open Lab.
 
 ## What counts as an AO
 
-Agents must hold an organizational *function* — governance, treasury, operations, research, development, moderation, or external representation — not merely produce content that humans then use. The line is authority, not tooling. An organization that runs its writing through a model is not in scope; one that lets agents allocate a budget is.
+Agents must hold an organizational *function* — leadership, governance, treasury, operations, research, development, moderation, or external representation — not merely produce content that humans then use. The line is authority, not tooling. An organization that runs its writing through a model is not in scope; one that lets agents allocate a budget is.
 
 Each record states how much authority agents actually exercise (`autonomy_level`) and what keeps humans in control (`human_oversight`), sourced field by field. Organizations routinely describe themselves as more autonomous than they are — the registry records what the evidence supports, and marks the gap when sources conflict.
 
