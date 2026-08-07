@@ -7,8 +7,9 @@ To fix a record, [open a correction issue](../../../issues/new?template=correcti
 | Path | Contents |
 |---|---|
 | `aos/<id>.yml` | One organization per file. Filename always matches the record's `id` |
-| `registry.json` | Every record in one file, for programmatic use |
+| `tools/<id>.yml` | One tool per file — software AOs are built on or run with |
+| `registry.json` · `tooling.json` | Each collection in one file, for programmatic use |
 
-Records validate against [../schema/ao.schema.json](../schema/ao.schema.json) — see [../schema/README.md](../schema/README.md) for what the fields mean and how to read `autonomy_level` in particular.
+Records validate against [../schema/ao.schema.json](../schema/ao.schema.json) and [../schema/tool.schema.json](../schema/tool.schema.json) — see [../schema/README.md](../schema/README.md) for what the fields mean and how to read `autonomy_level` in particular.
 
 > **Empty for now.** The sync scripts are written but not yet switched on — they're waiting on the Airtable base and credentials. See [../scripts/README.md](../scripts/README.md).

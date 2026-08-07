@@ -4,14 +4,22 @@ Kept in one place because it's the seam where the two sides of the sync have
 to agree. The other Airtable scripts import it, and a field renamed in
 Airtable is a change here.
 
+Two collections live in this base, deliberately separate:
+
+  Registry — autonomous organizations, where agents hold organizational
+             authority. Validated against schema/ao.schema.json.
+  Tooling  — software that AOs are built on or run with. Validated against
+             schema/tool.schema.json.
+
+A tool is not an AO however many agents it hosts. Merging them would dissolve
+the membership criterion that makes the registry worth citing, so they are
+different schemas with different fields — a tool has no `autonomy_level`, and
+an organization has no `license`.
+
 Airtable field names are human-facing (Title Case, spaces); schema keys are
 snake_case. Enum values are stored in Airtable exactly as the schema spells
 them, so the sync stays a copy rather than a translation layer nobody wants
-to maintain.
-
-A trailing `*` marks a field the schema requires — a record missing any of
-them cannot be published. The marker is part of the field name, so it shows
-up in the Airtable UI without anyone having to consult documentation.
+to maintain. A trailing `*` marks a field the schema requires.
 """
 
 import yaml
@@ -37,72 +45,16 @@ RegistryLoader.yaml_implicit_resolvers = {
 
 
 REGISTRY_TABLE = "Registry"
+TOOLING_TABLE = "Tooling"
 SOURCES_TABLE = "Sources"
 INTAKE_TABLE = "Intake"
 
-# Fields the sync reads by name rather than through a mapping.
+# Read by name rather than through a mapping. Shared by both collections —
+# the Sources table serves them both, so a report covering an organization
+# and the tool it runs on is one row, cited twice.
 PUBLISHED_FIELD = "Published"
 SOURCES_LINK_FIELD = "Sources *"
 SUPPORTS_FIELD = "Supports"
-
-# Airtable field name -> schema key, for values that copy across unchanged.
-SIMPLE_FIELDS = {
-    "ID *": "id",
-    "Name *": "name",
-    "Summary *": "summary",
-    "Website": "website",
-    "Status *": "status",
-    "Launched": "launched",
-    "Autonomy Level *": "autonomy_level",
-    "Human Oversight": "human_oversight",
-    "Governance Model": "governance_model",
-    "Legal Wrapper": "legal_wrapper",
-    "Jurisdiction": "jurisdiction",
-    "Added": "added",
-    "Updated": "updated",
-}
-
-# Airtable multipleSelects -> schema arrays.
-MULTI_SELECT_FIELDS = {
-    "Categories *": "categories",
-    "Agent Roles *": "agent_roles",
-}
-
-# Comma-separated singleLineText -> schema arrays. Airtable has no plain list
-# type, and multipleSelects would force a closed vocabulary on fields whose
-# values are open-ended.
-COMMA_LIST_FIELDS = {
-    "Aliases": "aliases",
-    "Agent Stack": "agent_stack",
-    "Tags": "tags",
-}
-
-# Nested under `onchain`. Contracts is multilineText (one per line) because
-# addresses are long enough that comma-separation is unreadable in the UI.
-ONCHAIN_CHECKBOX = "Is Onchain"
-ONCHAIN_LIST_FIELDS = {
-    "Chains": ("chains", ","),
-    "Contracts": ("contracts", "\n"),
-}
-
-# Airtable field name -> key under `links`.
-LINK_FIELDS = {
-    "Link: Docs": "docs",
-    "Link: Repo": "repo",
-    "Link: Blog": "blog",
-    "Link: Forum": "forum",
-    "Link: X": "x",
-    "Link: Discord": "discord",
-    "Link: Farcaster": "farcaster",
-}
-
-# Airtable field name -> key under `verification`.
-VERIFICATION_FIELDS = {
-    "Verification Method *": "method",
-    "Verified On *": "verified_on",
-    "Verified By": "verified_by",
-    "Verification Notes": "notes",
-}
 
 # Sources table field name -> key in a `sources[]` entry.
 SOURCE_FIELDS = {
@@ -113,8 +65,8 @@ SOURCE_FIELDS = {
 
 # Fields that exist for maintainers and never reach the published data.
 # Review State in particular is deliberately NOT the schema's `status`:
-# "insufficient information" describes our knowledge, not the organization,
-# and putting it in `status` would produce records that fail validation.
+# "insufficient information" describes our knowledge, not the subject, and
+# putting it in `status` would produce records that fail validation.
 INTERNAL_ONLY = {
     "Published",
     "Review State",
@@ -123,35 +75,172 @@ INTERNAL_ONLY = {
     "Notes",
     "Intake",
     "Registry",
+    "Tooling",
 }
 
-# The order keys appear in generated YAML. Stable ordering keeps diffs
-# meaningful — without it every sync run reshuffles every file.
-KEY_ORDER = [
-    "schema_version",
-    "id",
-    "name",
-    "aliases",
-    "summary",
-    "website",
-    "status",
-    "launched",
-    "categories",
-    "agent_roles",
-    "autonomy_level",
-    "human_oversight",
-    "governance_model",
-    "agent_stack",
-    "legal_wrapper",
-    "jurisdiction",
-    "onchain",
-    "links",
-    "sources",
-    "verification",
-    "tags",
-    "airtable_record_id",
-    "added",
-    "updated",
-]
-
 SCHEMA_VERSION = "0.1"
+
+
+class Collection:
+    """One synced table: how its Airtable fields map onto a schema."""
+
+    def __init__(
+        self,
+        key,
+        table,
+        schema_file,
+        data_dir,
+        bundle,
+        simple,
+        multi_select,
+        comma_lists,
+        links,
+        verification,
+        key_order,
+        onchain_checkbox=None,
+        onchain_lists=None,
+    ):
+        self.key = key
+        self.table = table
+        self.schema_file = schema_file
+        self.data_dir = data_dir
+        self.bundle = bundle
+        self.simple = simple
+        self.multi_select = multi_select
+        self.comma_lists = comma_lists
+        self.links = links
+        self.verification = verification
+        self.key_order = key_order
+        self.onchain_checkbox = onchain_checkbox
+        self.onchain_lists = onchain_lists or {}
+
+    def airtable_field_names(self):
+        """Every Airtable field this collection reads."""
+        return (
+            set(self.simple)
+            | set(self.multi_select)
+            | set(self.comma_lists)
+            | set(self.links)
+            | set(self.verification)
+            | set(self.onchain_lists)
+            | {PUBLISHED_FIELD, SOURCES_LINK_FIELD}
+            | ({self.onchain_checkbox} if self.onchain_checkbox else set())
+        )
+
+
+REGISTRY = Collection(
+    key="registry",
+    table=REGISTRY_TABLE,
+    schema_file="ao.schema.json",
+    data_dir="aos",
+    bundle="registry.json",
+    simple={
+        "ID *": "id",
+        "Name *": "name",
+        "Summary *": "summary",
+        "Website": "website",
+        "Status *": "status",
+        "Launched": "launched",
+        "Autonomy Level *": "autonomy_level",
+        "Human Oversight": "human_oversight",
+        "Governance Model": "governance_model",
+        "Legal Wrapper": "legal_wrapper",
+        "Jurisdiction": "jurisdiction",
+        "Added": "added",
+        "Updated": "updated",
+    },
+    multi_select={
+        "Categories *": "categories",
+        "Agent Roles *": "agent_roles",
+    },
+    comma_lists={
+        "Aliases": "aliases",
+        "Agent Stack": "agent_stack",
+        "Tags": "tags",
+    },
+    links={
+        "Link: Docs": "docs",
+        "Link: Repo": "repo",
+        "Link: Blog": "blog",
+        "Link: Forum": "forum",
+        "Link: X": "x",
+        "Link: Discord": "discord",
+        "Link: Farcaster": "farcaster",
+    },
+    verification={
+        "Verification Method *": "method",
+        "Verified On *": "verified_on",
+        "Verified By": "verified_by",
+        "Verification Notes": "notes",
+    },
+    onchain_checkbox="Is Onchain",
+    onchain_lists={
+        "Chains": ("chains", ","),
+        "Contracts": ("contracts", "\n"),
+    },
+    key_order=[
+        "schema_version", "id", "name", "aliases", "summary", "website", "status",
+        "launched", "categories", "agent_roles", "autonomy_level", "human_oversight",
+        "governance_model", "agent_stack", "legal_wrapper", "jurisdiction", "onchain",
+        "links", "sources", "verification", "tags", "airtable_record_id", "added",
+        "updated",
+    ],
+)
+
+TOOLING = Collection(
+    key="tooling",
+    table=TOOLING_TABLE,
+    schema_file="tool.schema.json",
+    data_dir="tools",
+    bundle="tooling.json",
+    simple={
+        "ID *": "id",
+        "Name *": "name",
+        "Summary *": "summary",
+        "Website": "website",
+        "Status *": "status",
+        "Launched": "launched",
+        "Agent Model": "agent_model",
+        "Human Controls": "human_controls",
+        "Maintainer": "maintainer",
+        "Open Source": "open_source",
+        "License": "license",
+        "Self Hostable": "self_hostable",
+        "Model Agnostic": "model_agnostic",
+        "Added": "added",
+        "Updated": "updated",
+    },
+    multi_select={
+        "Categories *": "categories",
+    },
+    comma_lists={
+        "Aliases": "aliases",
+        "Languages": "languages",
+        "Protocols": "protocols",
+        "Used By": "used_by",
+        "Tags": "tags",
+    },
+    links={
+        "Link: Docs": "docs",
+        "Link: Repo": "repo",
+        "Link: Blog": "blog",
+        "Link: Forum": "forum",
+        "Link: X": "x",
+        "Link: Discord": "discord",
+    },
+    verification={
+        "Verification Method *": "method",
+        "Verified On *": "verified_on",
+        "Verified By": "verified_by",
+        "Verification Notes": "notes",
+    },
+    key_order=[
+        "schema_version", "id", "name", "aliases", "summary", "website", "status",
+        "launched", "categories", "agent_model", "human_controls", "maintainer",
+        "open_source", "license", "self_hostable", "model_agnostic", "languages",
+        "protocols", "used_by", "links", "sources", "verification", "tags",
+        "airtable_record_id", "added", "updated",
+    ],
+)
+
+COLLECTIONS = [REGISTRY, TOOLING]

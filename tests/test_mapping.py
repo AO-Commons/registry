@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
-"""Checks the seam between the JSON Schema, the Airtable base, and the scripts.
+"""Checks the seam between the JSON Schemas, the Airtable base, and the scripts.
 
 This is the part of the system that breaks silently. A field renamed in
-Airtable, an enum value added to the schema but not the intake form, a
-select option capitalized differently — none of these raise an error at the
-time. They produce records that quietly fail validation, or worse, records
-that validate but say the wrong thing.
+Airtable, an enum value added to a schema but not the intake form, a select
+option capitalized differently — none of these raise an error at the time.
+They produce records that quietly fail validation, or worse, records that
+validate but say the wrong thing.
+
+Checks are driven off airtable_fields.COLLECTIONS, so adding a collection
+extends the coverage rather than silently escaping it.
 
 Deliberately dependency-light: plain asserts, run directly, no pytest.
 
@@ -27,9 +30,14 @@ import setup_airtable_base as setup  # noqa: E402
 from intake_to_airtable import checked_options, parse_issue_form, to_enum_token  # noqa: E402
 from sync_from_airtable import build_record  # noqa: E402
 
-SCHEMA = json.loads((ROOT / "schema" / "ao.schema.json").read_text())
-PROPS = SCHEMA["properties"]
-VALIDATOR = Draft202012Validator(SCHEMA, format_checker=FormatChecker())
+SCHEMAS = {
+    spec.key: json.loads((ROOT / "schema" / spec.schema_file).read_text())
+    for spec in AF.COLLECTIONS
+}
+AO = SCHEMAS["registry"]
+TOOL = SCHEMAS["tooling"]
+
+TABLE_FIELDS = {name: fields for name, _, fields in setup.TABLES}
 
 passed = 0
 
@@ -47,70 +55,86 @@ def field_options(fields: list[dict], name: str) -> list[str]:
     raise AssertionError(f"no field named {name!r}")
 
 
+# --- The two collections must stay distinct --------------------------------
+# A tool is not an autonomous organization however many agents it hosts.
+# If the schemas ever converge, the registry's membership criterion — the
+# thing that makes it worth citing — has quietly dissolved.
+
+ao_only = set(AO["properties"]) - set(TOOL["properties"])
+tool_only = set(TOOL["properties"]) - set(AO["properties"])
+assert "autonomy_level" in ao_only and "agent_roles" in ao_only, (
+    "the AO schema must keep the fields that define organizational authority"
+)
+assert "license" in tool_only and "agent_model" in tool_only, (
+    "the tooling schema must keep the fields that describe software"
+)
+assert AF.REGISTRY.table != AF.TOOLING.table
+assert AF.REGISTRY.data_dir != AF.TOOLING.data_dir
+assert AF.REGISTRY.bundle != AF.TOOLING.bundle
+check(f"AO and tooling schemas stay distinct ({len(ao_only)} vs {len(tool_only)} unique fields)")
+
+
 # --- The Airtable vocabulary must equal the schema vocabulary ---------------
 # Not "be compatible with" — equal. Anything else makes the sync a translation
 # layer, and translation layers rot.
 
 ENUM_FIELDS = {
-    "Status *": PROPS["status"]["enum"],
-    "Categories *": PROPS["categories"]["items"]["enum"],
-    "Agent Roles *": PROPS["agent_roles"]["items"]["enum"],
-    "Autonomy Level *": PROPS["autonomy_level"]["enum"],
-    "Governance Model": PROPS["governance_model"]["enum"],
-    "Legal Wrapper": PROPS["legal_wrapper"]["enum"],
-    "Verification Method *": PROPS["verification"]["properties"]["method"]["enum"],
+    AF.REGISTRY.table: {
+        "Status *": AO["properties"]["status"]["enum"],
+        "Categories *": AO["properties"]["categories"]["items"]["enum"],
+        "Agent Roles *": AO["properties"]["agent_roles"]["items"]["enum"],
+        "Autonomy Level *": AO["properties"]["autonomy_level"]["enum"],
+        "Governance Model": AO["properties"]["governance_model"]["enum"],
+        "Legal Wrapper": AO["properties"]["legal_wrapper"]["enum"],
+        "Verification Method *": AO["properties"]["verification"]["properties"]["method"]["enum"],
+    },
+    AF.TOOLING.table: {
+        "Status *": TOOL["properties"]["status"]["enum"],
+        "Categories *": TOOL["properties"]["categories"]["items"]["enum"],
+        "Open Source": TOOL["properties"]["open_source"]["enum"],
+        "Self Hostable": TOOL["properties"]["self_hostable"]["enum"],
+        "Model Agnostic": TOOL["properties"]["model_agnostic"]["enum"],
+        "Verification Method *": TOOL["properties"]["verification"]["properties"]["method"]["enum"],
+    },
 }
-for name, expected in ENUM_FIELDS.items():
-    assert field_options(setup.REGISTRY_FIELDS, name) == expected, f"{name} options drifted"
-check(f"Airtable select options equal schema enums ({len(ENUM_FIELDS)} fields)")
+count = 0
+for table, fields in ENUM_FIELDS.items():
+    for name, expected in fields.items():
+        assert field_options(TABLE_FIELDS[table], name) == expected, f"{table}.{name} drifted"
+        count += 1
+check(f"Airtable select options equal schema enums ({count} fields across 2 tables)")
 
-# Review State must never share a vocabulary with the schema's `status`.
-# "insufficient information" describes our knowledge, not the organization;
-# putting it in Status would produce records that fail validation.
-review_states = set(field_options(setup.REGISTRY_FIELDS, "Review State"))
-assert not (review_states & set(PROPS["status"]["enum"])), (
-    f"Review State overlaps the schema status vocabulary: "
-    f"{review_states & set(PROPS['status']['enum'])}"
-)
+for table in ENUM_FIELDS:
+    states = set(field_options(TABLE_FIELDS[table], "Review State"))
+    status = set(field_options(TABLE_FIELDS[table], "Status *"))
+    assert not (states & status), f"{table}: Review State overlaps Status"
 assert "Review State" in AF.INTERNAL_ONLY, "Review State must never be published"
-check("Review State is internal-only and shares no values with schema status")
+check("Review State is internal-only and shares no values with Status, in both tables")
 
 
 # --- The `*` marker must mean exactly "the schema requires this" -----------
 
-SCHEMA_REQUIRED = set(SCHEMA["required"])
-starred = {
-    f["name"].removesuffix(" *")
-    for f in setup.REGISTRY_FIELDS
-    if f["name"].endswith(" *")
-} | {"sources"}  # the link field, defined separately
-mapped = {**AF.SIMPLE_FIELDS, **AF.MULTI_SELECT_FIELDS}
-starred_keys = {mapped[name] for name in mapped if name.endswith(" *")}
-starred_keys |= {"verification", "sources"}
-assert starred_keys == SCHEMA_REQUIRED, (
-    f"starred fields and schema-required keys disagree: "
-    f"starred-only {starred_keys - SCHEMA_REQUIRED}, "
-    f"required-only {SCHEMA_REQUIRED - starred_keys}"
-)
-check(f"every `*` field maps to a schema-required key, and vice versa ({len(SCHEMA_REQUIRED)})")
+for spec in AF.COLLECTIONS:
+    required = set(SCHEMAS[spec.key]["required"])
+    mapped = {**spec.simple, **spec.multi_select}
+    starred = {key for name, key in mapped.items() if name.endswith(" *")}
+    starred |= {"verification", "sources"}  # marked via their own fields
+    assert starred == required, (
+        f"{spec.table}: starred fields and schema-required keys disagree — "
+        f"starred-only {starred - required}, required-only {required - starred}"
+    )
+check("every `*` field maps to a schema-required key and vice versa, in both collections")
 
 
 # --- Every field a script reads or writes must exist in the base ------------
 
-registry_names = {f["name"] for f in setup.REGISTRY_FIELDS} | {AF.SOURCES_LINK_FIELD}
-sync_reads = (
-    set(AF.SIMPLE_FIELDS)
-    | set(AF.MULTI_SELECT_FIELDS)
-    | set(AF.COMMA_LIST_FIELDS)
-    | set(AF.LINK_FIELDS)
-    | set(AF.VERIFICATION_FIELDS)
-    | set(AF.ONCHAIN_LIST_FIELDS)
-    | {AF.ONCHAIN_CHECKBOX, AF.PUBLISHED_FIELD, AF.SOURCES_LINK_FIELD}
-)
-assert not (sync_reads - registry_names), f"sync reads absent fields: {sync_reads - registry_names}"
-check(f"every field the sync reads exists in the base ({len(sync_reads)})")
+for spec in AF.COLLECTIONS:
+    defined = {f["name"] for f in TABLE_FIELDS[spec.table]} | {AF.SOURCES_LINK_FIELD}
+    missing = spec.airtable_field_names() - defined
+    assert not missing, f"{spec.table}: sync reads absent fields {missing}"
+check("every field the sync reads exists in the base, in both collections")
 
-source_names = {f["name"] for f in setup.SOURCES_FIELDS}
+source_names = {f["name"] for f in TABLE_FIELDS[AF.SOURCES_TABLE]}
 assert not ((set(AF.SOURCE_FIELDS) | {AF.SUPPORTS_FIELD}) - source_names)
 check("every Sources field the sync reads exists")
 
@@ -118,10 +142,21 @@ INTAKE_WRITES = {
     "Submission", "Issue Number", "Issue URL", "Type", "Status", "Raw Body",
     "Organization Name", "Website", "Summary", "Human Oversight", "Sources Given",
     "Target Record ID", "Agent Roles Claimed", "Autonomy Claimed", "Self Submission",
+    "Tool Categories", "Agent Model Claimed", "License", "Used By",
 }
-intake_names = {f["name"] for f in setup.INTAKE_FIELDS}
-assert not (INTAKE_WRITES - intake_names), f"intake writes absent fields: {INTAKE_WRITES - intake_names}"
+intake_names = {f["name"] for f in TABLE_FIELDS[AF.INTAKE_TABLE]}
+assert not (INTAKE_WRITES - intake_names), f"intake writes absent: {INTAKE_WRITES - intake_names}"
 check(f"every field the intake script writes exists in the base ({len(INTAKE_WRITES)})")
+
+# The blocker formulas must check exactly the starred fields, or the Airtable
+# guard and the schema would disagree about what "complete" means.
+for table, checks in setup.BLOCKERS.items():
+    starred = {f["name"] for f in TABLE_FIELDS[table] if f["name"].endswith(" *")}
+    starred.add(AF.SOURCES_LINK_FIELD)
+    assert {name for name, _, _ in checks} == starred, (
+        f"{table}: Publish Blockers checks {[n for n, _, _ in checks]}, starred are {sorted(starred)}"
+    )
+check("Publish Blockers checks exactly the starred fields, in both tables")
 
 
 # --- The intake form must not offer options the schema rejects --------------
@@ -129,26 +164,34 @@ check(f"every field the intake script writes exists in the base ({len(INTAKE_WRI
 form = yaml.safe_load((ROOT / ".github" / "ISSUE_TEMPLATE" / "new-ao.yml").read_text())
 form_roles = {
     to_enum_token(option["label"])
-    for block in form["body"]
-    if block.get("id") == "agent_roles"
+    for block in form["body"] if block.get("id") == "agent_roles"
     for option in block["attributes"]["options"]
 }
-assert form_roles <= set(PROPS["agent_roles"]["items"]["enum"]), (
-    f"form offers roles the schema rejects: {form_roles - set(PROPS['agent_roles']['items']['enum'])}"
-)
+assert form_roles <= set(AO["properties"]["agent_roles"]["items"]["enum"])
 check(f"every intake-form agent role is a valid schema value ({len(form_roles)})")
 
 form_autonomy = {
     to_enum_token(option)
-    for block in form["body"]
-    if block.get("id") == "autonomy_level"
+    for block in form["body"] if block.get("id") == "autonomy_level"
     for option in block["attributes"]["options"]
     if not option.lower().startswith("not sure")
 }
-assert form_autonomy <= set(PROPS["autonomy_level"]["enum"]), (
-    f"form offers autonomy levels the schema rejects: {form_autonomy - set(PROPS['autonomy_level']['enum'])}"
-)
+assert form_autonomy <= set(AO["properties"]["autonomy_level"]["enum"])
 check(f"every intake-form autonomy level is a valid schema value ({len(form_autonomy)})")
+
+tool_form_path = ROOT / ".github" / "ISSUE_TEMPLATE" / "new-tool.yml"
+if tool_form_path.exists():
+    tool_form = yaml.safe_load(tool_form_path.read_text())
+    tool_cats = {
+        to_enum_token(option["label"])
+        for block in tool_form["body"] if block.get("id") == "categories"
+        for option in block["attributes"]["options"]
+    }
+    assert tool_cats <= set(TOOL["properties"]["categories"]["items"]["enum"]), (
+        f"tool form offers categories the schema rejects: "
+        f"{tool_cats - set(TOOL['properties']['categories']['items']['enum'])}"
+    )
+    check(f"every tool-form category is a valid schema value ({len(tool_cats)})")
 
 
 # --- Parsing a rendered issue form ------------------------------------------
@@ -156,10 +199,6 @@ check(f"every intake-form autonomy level is a valid schema value ({len(form_auto
 BODY = """### Organization name
 
 Example Collective
-
-### Website
-
-https://example.org
 
 ### Which functions do AI agents hold?
 
@@ -185,31 +224,8 @@ assert to_enum_token(sections["How much authority do agents actually exercise?"]
 check("issue-form parsing, including unticked boxes and empty responses")
 
 
-# --- Building a record from an Airtable row ---------------------------------
+# --- Building records from Airtable rows ------------------------------------
 
-ROW = {
-    "id": "recAAAAAAAAAAAAAA",
-    "fields": {
-        "ID *": "example-collective", "Name *": "Example Collective",
-        "Aliases": "Example DAO, ExCo",
-        "Summary *": "A research collective in which agents draft and screen grant proposals.",
-        "Website": "https://example.org", "Status *": "active", "Launched": "2025-03",
-        "Categories *": ["research", "grantmaking"], "Agent Roles *": ["leadership", "research"],
-        "Autonomy Level *": "delegated",
-        "Human Oversight": "Disbursements above $5,000 require a 3-of-5 signature.",
-        "Governance Model": "multisig", "Agent Stack": "Claude, custom orchestration",
-        "Legal Wrapper": "nonprofit", "Jurisdiction": "US-CA",
-        "Is Onchain": True, "Chains": "ethereum",
-        "Contracts": "ethereum:0x0000000000000000000000000000000000000000",
-        "Link: Docs": "https://docs.example.org",
-        "Verification Method *": "documented", "Verified On *": "2026-08-01",
-        "Verified By": "ao-commons-research", "Tags": "grants, human-in-the-loop",
-        "Added": "2026-08-01", "Updated": "2026-08-01", "Published": True,
-        "Review State": "Ready to publish",
-        "Notes": "INTERNAL REVIEWER NOTE — must never be published",
-        AF.SOURCES_LINK_FIELD: ["recS2", "recS1"],
-    },
-}
 SOURCES = {
     "recS2": {"id": "recS2", "fields": {"URL *": "https://example.org/blog/launch",
                                         "Title": "Launch", "Accessed *": "2026-08-01",
@@ -219,36 +235,87 @@ SOURCES = {
                                         "Supports": "autonomy_level, human_oversight"}},
 }
 
-record = build_record(ROW, SOURCES)
-problems = sorted(VALIDATOR.iter_errors(record), key=lambda e: list(e.path))
-assert not problems, "; ".join(
-    f"{'.'.join(str(p) for p in e.path) or '(root)'}: {e.message}" for e in problems
-)
-check("a fully populated Airtable row produces a schema-valid record")
+AO_ROW = {"id": "recAAAAAAAAAAAAAA", "fields": {
+    "ID *": "example-collective", "Name *": "Example Collective",
+    "Aliases": "Example DAO, ExCo",
+    "Summary *": "A research collective in which agents draft and screen grant proposals.",
+    "Website": "https://example.org", "Status *": "active", "Launched": "2025-03",
+    "Categories *": ["research", "grantmaking"], "Agent Roles *": ["leadership", "research"],
+    "Autonomy Level *": "delegated",
+    "Human Oversight": "Disbursements above $5,000 require a 3-of-5 signature.",
+    "Governance Model": "multisig", "Agent Stack": "Claude, custom orchestration",
+    "Legal Wrapper": "nonprofit", "Jurisdiction": "US-CA",
+    "Is Onchain": True, "Chains": "ethereum",
+    "Contracts": "ethereum:0x0000000000000000000000000000000000000000",
+    "Link: Docs": "https://docs.example.org",
+    "Verification Method *": "documented", "Verified On *": "2026-08-01",
+    "Verified By": "ao-commons-research", "Tags": "grants, human-in-the-loop",
+    "Added": "2026-08-01", "Updated": "2026-08-01", "Published": True,
+    "Review State": "Ready to publish",
+    "Notes": "INTERNAL REVIEWER NOTE — must never be published",
+    AF.SOURCES_LINK_FIELD: ["recS2", "recS1"],
+}}
 
-assert "INTERNAL REVIEWER NOTE" not in json.dumps(record), "internal notes leaked into output"
-assert "Notes" not in record
-check("internal-only fields never reach published output")
+TOOL_ROW = {"id": "recCCCCCCCCCCCCCC", "fields": {
+    "ID *": "example-orchestrator", "Name *": "Example Orchestrator",
+    "Summary *": "An open-source server for running teams of AI agents against assigned work.",
+    "Website": "https://example.dev", "Status *": "active", "Launched": "2025-11",
+    "Categories *": ["orchestration", "observability"],
+    "Agent Model": "Agents are managed workers; a human assigns goals.",
+    "Human Controls": "Per-agent spending caps and an approval step.",
+    "Maintainer": "Example Labs", "Open Source": "yes", "License": "Apache-2.0",
+    "Self Hostable": "yes", "Model Agnostic": "yes",
+    "Languages": "TypeScript", "Protocols": "mcp",
+    "Used By": "example-collective",
+    "Link: Repo": "https://github.com/example/orchestrator",
+    "Verification Method *": "documented", "Verified On *": "2026-08-07",
+    "Tags": "agent-management", "Published": True,
+    "Notes": "INTERNAL REVIEWER NOTE — must never be published",
+    AF.SOURCES_LINK_FIELD: ["recS1"],
+}}
 
-assert record["aliases"] == ["Example DAO", "ExCo"]
-assert record["onchain"] == {
+for spec, row in ((AF.REGISTRY, AO_ROW), (AF.TOOLING, TOOL_ROW)):
+    validator = Draft202012Validator(SCHEMAS[spec.key], format_checker=FormatChecker())
+    record = build_record(row, SOURCES, spec)
+    problems = sorted(validator.iter_errors(record), key=lambda e: list(e.path))
+    assert not problems, f"{spec.table}: " + "; ".join(
+        f"{'.'.join(str(p) for p in e.path) or '(root)'}: {e.message}" for e in problems
+    )
+    assert "INTERNAL REVIEWER NOTE" not in json.dumps(record), f"{spec.table}: internal note leaked"
+    assert list(record)[:2] == ["schema_version", "id"], f"{spec.table}: key order not fixed"
+check("both collections produce schema-valid records with internal fields excluded")
+
+ao_record = build_record(AO_ROW, SOURCES, AF.REGISTRY)
+assert ao_record["aliases"] == ["Example DAO", "ExCo"]
+assert ao_record["onchain"] == {
     "is_onchain": True, "chains": ["ethereum"],
     "contracts": ["ethereum:0x0000000000000000000000000000000000000000"],
 }
-assert [s["url"] for s in record["sources"]] == [
+assert [s["url"] for s in ao_record["sources"]] == [
     "https://example.org/blog/launch", "https://example.org/governance",
 ], "sources sort by url, so reordering the Airtable link field produces no diff"
-assert list(record)[:2] == ["schema_version", "id"], "key order is fixed, not insertion order"
 check("output is deterministic: sorted lists, fixed key order")
 
-unchecked = build_record({"id": "recB", "fields": {**ROW["fields"], "Is Onchain": False,
-                                                   "Chains": "", "Contracts": ""}}, SOURCES)
+unchecked = build_record(
+    {"id": "recB", "fields": {**AO_ROW["fields"], "Is Onchain": False, "Chains": "", "Contracts": ""}},
+    SOURCES, AF.REGISTRY,
+)
 assert unchecked["onchain"] == {"is_onchain": False}, "unchecked means not-onchain, not unknown"
 check("an unchecked on-chain box means 'not on-chain', not 'unknown'")
 
-sourceless = build_record({"id": "recC", "fields": {**ROW["fields"], AF.SOURCES_LINK_FIELD: []}}, SOURCES)
-assert list(VALIDATOR.iter_errors(sourceless)), "a sourceless record must fail validation"
-check("a record with no sources fails rather than publishing")
+# Tooling has no on-chain concept; the shared builder must not invent one.
+tool_record = build_record(TOOL_ROW, SOURCES, AF.TOOLING)
+assert "onchain" not in tool_record, "tooling records must not gain organization-only fields"
+assert tool_record["used_by"] == ["example-collective"]
+check("the shared builder does not leak organization-only fields into tooling")
+
+for spec, row in ((AF.REGISTRY, AO_ROW), (AF.TOOLING, TOOL_ROW)):
+    validator = Draft202012Validator(SCHEMAS[spec.key], format_checker=FormatChecker())
+    sourceless = build_record(
+        {"id": "recD", "fields": {**row["fields"], AF.SOURCES_LINK_FIELD: []}}, SOURCES, spec
+    )
+    assert list(validator.iter_errors(sourceless)), f"{spec.table}: sourceless record must fail"
+check("a record with no sources fails rather than publishing, in both collections")
 
 
 # --- Table structure --------------------------------------------------------
@@ -261,6 +328,6 @@ for name, _, fields in setup.TABLES:
     assert fields[0]["type"] in ALLOWED_PRIMARY, f"{name}: primary field type {fields[0]['type']}"
     names = [f["name"] for f in fields]
     assert len(names) == len(set(names)), f"{name}: duplicate field names"
-check("every table has a valid primary field type and unique field names")
+check(f"every table has a valid primary field type and unique field names ({len(setup.TABLES)})")
 
 print(f"\n{passed} checks passed.")

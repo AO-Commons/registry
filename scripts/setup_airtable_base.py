@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
-"""Apply the defined table structure to the Airtable registry base.
+"""Apply the defined table structure to the Airtable base.
 
 Converges rather than creates: missing tables are created, missing fields are
 added, and fields listed in RENAMES are renamed in place. Safe to re-run, and
-safe to run against a base that already holds records — it never deletes a
-field or drops data.
+safe against a base that already holds records — it never deletes a field or
+drops data.
 
-Every single-select and multi-select option is derived from
-schema/ao.schema.json at runtime, so the Airtable vocabulary cannot drift
-from the schema enums. That drift is the failure this whole design is trying
-to avoid — a base whose options say "Delegated" while the schema says
-"delegated" turns the sync into a translation layer nobody maintains.
+Every single-select and multi-select option is derived from the JSON Schemas
+at runtime, so the Airtable vocabulary cannot drift from the schema enums.
+That drift is the failure this whole design is trying to avoid — a base whose
+options say "Delegated" while the schema says "delegated" turns the sync into
+a translation layer nobody maintains.
 
 Usage:  python3 scripts/setup_airtable_base.py
 Env:    AIRTABLE_TOKEN, AIRTABLE_BASE_ID
@@ -33,87 +33,70 @@ from airtable_fields import (
     REGISTRY_TABLE,
     SOURCES_LINK_FIELD,
     SOURCES_TABLE,
+    TOOLING_TABLE,
 )
 
 ROOT = Path(__file__).resolve().parent.parent
-SCHEMA = json.loads((ROOT / "schema" / "ao.schema.json").read_text())
+AO_SCHEMA = json.loads((ROOT / "schema" / "ao.schema.json").read_text())
+TOOL_SCHEMA = json.loads((ROOT / "schema" / "tool.schema.json").read_text())
 META = "https://api.airtable.com/v0/meta/bases"
-
-PROPERTIES = SCHEMA["properties"]
 
 # Applied before fields are created, so an existing base converges onto the
 # current names instead of accumulating duplicates alongside them.
 RENAMES = {
     REGISTRY_TABLE: {
-        "ID": "ID *",
-        "Name": "Name *",
-        "Summary": "Summary *",
-        "Status": "Status *",
-        "Categories": "Categories *",
-        "Agent Roles": "Agent Roles *",
+        "ID": "ID *", "Name": "Name *", "Summary": "Summary *", "Status": "Status *",
+        "Categories": "Categories *", "Agent Roles": "Agent Roles *",
         "Autonomy Level": "Autonomy Level *",
-        "Verification Method": "Verification Method *",
-        "Verified On": "Verified On *",
+        "Verification Method": "Verification Method *", "Verified On": "Verified On *",
         "Sources": SOURCES_LINK_FIELD,
     },
-    SOURCES_TABLE: {
-        "URL": "URL *",
-        "Accessed": "Accessed *",
-    },
+    SOURCES_TABLE: {"URL": "URL *", "Accessed": "Accessed *"},
 }
 
 
-def enum_of(*path: str) -> list[dict]:
-    """Pull an enum out of the schema and shape it as Airtable choices."""
-    node = PROPERTIES
+def enum_of(schema: dict, *path: str) -> list[dict]:
+    """Pull an enum out of a schema and shape it as Airtable choices."""
+    node = schema["properties"]
     for key in path:
         node = node[key]
     values = node.get("enum") or node["items"]["enum"]
     return [{"name": value} for value in values]
 
 
-def text(name: str, description: str = "", multiline: bool = False) -> dict:
+def text(name, description="", multiline=False):
     field = {"name": name, "type": "multilineText" if multiline else "singleLineText"}
     if description:
         field["description"] = description
     return field
 
 
-def url(name: str, description: str = "") -> dict:
+def url(name, description=""):
     field = {"name": name, "type": "url"}
     if description:
         field["description"] = description
     return field
 
 
-def date(name: str, description: str = "") -> dict:
-    field = {
-        "name": name,
-        "type": "date",
-        "options": {"dateFormat": {"name": "iso", "format": "YYYY-MM-DD"}},
-    }
+def date(name, description=""):
+    field = {"name": name, "type": "date",
+             "options": {"dateFormat": {"name": "iso", "format": "YYYY-MM-DD"}}}
     if description:
         field["description"] = description
     return field
 
 
-def checkbox(name: str, description: str = "") -> dict:
-    field = {
-        "name": name,
-        "type": "checkbox",
-        "options": {"icon": "check", "color": "greenBright"},
-    }
+def checkbox(name, description=""):
+    field = {"name": name, "type": "checkbox",
+             "options": {"icon": "check", "color": "greenBright"}}
     if description:
         field["description"] = description
     return field
 
 
-def select(name: str, choices: list[dict], multi: bool = False, description: str = "") -> dict:
-    field = {
-        "name": name,
-        "type": "multipleSelects" if multi else "singleSelect",
-        "options": {"choices": choices},
-    }
+def select(name, choices, multi=False, description=""):
+    field = {"name": name, "type": "multipleSelects" if multi else "singleSelect",
+             "options": {"choices": choices}}
     if description:
         field["description"] = description
     return field
@@ -121,63 +104,77 @@ def select(name: str, choices: list[dict], multi: bool = False, description: str
 
 REQUIRED_NOTE = "Required — a record missing this cannot be published."
 
+REVIEW_STATE = select(
+    "Review State",
+    [{"name": "Draft"}, {"name": "Needs sources"},
+     {"name": "Insufficient information"}, {"name": "Ready to publish"}],
+    description="Our confidence in the record, for maintainers only. Never published — deliberately separate from Status, which describes the subject.",
+)
+
 REGISTRY_FIELDS = [
     text("ID *", f"{REQUIRED_NOTE} Stable lowercase-hyphenated slug; becomes the published filename. Never change it once published — citations depend on it."),
     text("Name *", f"{REQUIRED_NOTE} The organization's own name for itself."),
     checkbox("Published", "The sync gate. Unchecked records are invisible to the public repo."),
-    select("Status *", enum_of("status"), description=f"{REQUIRED_NOTE} The organization's operating state — not our confidence in the record. See Review State for that."),
+    select("Status *", enum_of(AO_SCHEMA, "status"), description=f"{REQUIRED_NOTE} The organization's operating state — not our confidence in the record. See Review State for that."),
     text("Summary *", f"{REQUIRED_NOTE} At least 20 characters. One or two neutral sentences, descriptive rather than promotional.", multiline=True),
     url("Website"),
     text("Aliases", "Former or alternative names, comma-separated."),
     text("Launched", "YYYY, YYYY-MM, or YYYY-MM-DD — whatever precision the evidence supports. Text, not a date, so partial precision survives."),
-    select("Categories *", enum_of("categories"), multi=True, description=REQUIRED_NOTE),
-    select(
-        "Agent Roles *",
-        enum_of("agent_roles"),
-        multi=True,
-        description=f"{REQUIRED_NOTE} Which organizational functions agents hold. The membership criterion — authority, not tooling.",
-    ),
-    select(
-        "Autonomy Level *",
-        enum_of("autonomy_level"),
-        description=f"{REQUIRED_NOTE} What the evidence supports, NOT what the organization claims. 'undetermined' is a legitimate answer when sources conflict.",
-    ),
-    text(
-        "Human Oversight",
-        "The specific mechanisms: thresholds, vetoes, review cadence, kill switches. If there are none, write that explicitly — an empty field reads as 'not yet researched'.",
-        multiline=True,
-    ),
-    select("Governance Model", enum_of("governance_model")),
+    select("Categories *", enum_of(AO_SCHEMA, "categories"), multi=True, description=REQUIRED_NOTE),
+    select("Agent Roles *", enum_of(AO_SCHEMA, "agent_roles"), multi=True,
+           description=f"{REQUIRED_NOTE} Which organizational functions agents hold. The membership criterion — authority, not tooling."),
+    select("Autonomy Level *", enum_of(AO_SCHEMA, "autonomy_level"),
+           description=f"{REQUIRED_NOTE} What the evidence supports, NOT what the organization claims. 'undetermined' is legitimate when sources conflict."),
+    text("Human Oversight", "The specific mechanisms: thresholds, vetoes, review cadence, kill switches. If there are none, write that explicitly — an empty field reads as 'not yet researched'.", multiline=True),
+    select("Governance Model", enum_of(AO_SCHEMA, "governance_model")),
     text("Agent Stack", "Frameworks, models, or platforms, comma-separated. Not an endorsement."),
-    select("Legal Wrapper", enum_of("legal_wrapper")),
+    select("Legal Wrapper", enum_of(AO_SCHEMA, "legal_wrapper")),
     text("Jurisdiction", "ISO 3166-1 alpha-2, or a subdivision where it matters (e.g. US-WY)."),
     checkbox("Is Onchain"),
     text("Chains", "Comma-separated."),
     text("Contracts", "Chain-prefixed addresses, one per line (e.g. ethereum:0xabc...).", multiline=True),
-    url("Link: Docs"),
-    url("Link: Repo"),
-    url("Link: Blog"),
-    url("Link: Forum"),
-    url("Link: X"),
-    url("Link: Discord"),
-    url("Link: Farcaster"),
-    select("Verification Method *", enum_of("verification", "properties", "method"), description=REQUIRED_NOTE),
+    url("Link: Docs"), url("Link: Repo"), url("Link: Blog"), url("Link: Forum"),
+    url("Link: X"), url("Link: Discord"), url("Link: Farcaster"),
+    select("Verification Method *", enum_of(AO_SCHEMA, "verification", "properties", "method"), description=REQUIRED_NOTE),
     date("Verified On *", REQUIRED_NOTE),
     text("Verified By", "Role or handle of the reviewer — never personal contact details."),
     text("Verification Notes", multiline=True),
     text("Tags", "Comma-separated, lowercase-hyphenated."),
-    date("Added"),
-    date("Updated"),
-    select(
-        "Review State",
-        [
-            {"name": "Draft"},
-            {"name": "Needs sources"},
-            {"name": "Insufficient information"},
-            {"name": "Ready to publish"},
-        ],
-        description="Our confidence in the record, for maintainers only. Never published — deliberately separate from Status, which describes the organization.",
-    ),
+    date("Added"), date("Updated"),
+    REVIEW_STATE,
+    text("Notes", "Internal maintainer notes. Never published.", multiline=True),
+]
+
+TOOLING_FIELDS = [
+    text("ID *", f"{REQUIRED_NOTE} Stable lowercase-hyphenated slug; becomes the published filename."),
+    text("Name *", f"{REQUIRED_NOTE} The tool's own name for itself."),
+    checkbox("Published", "The sync gate. Unchecked records are invisible to the public repo."),
+    select("Status *", enum_of(TOOL_SCHEMA, "status"), description=f"{REQUIRED_NOTE} The tool's maturity and maintenance state."),
+    text("Summary *", f"{REQUIRED_NOTE} At least 20 characters, neutral and descriptive. Vendor copy is a source, not a summary.", multiline=True),
+    url("Website"),
+    text("Aliases", "Former or alternative names, comma-separated."),
+    text("Launched", "First PUBLIC availability, which is often well after the repository was created. YYYY, YYYY-MM, or YYYY-MM-DD."),
+    select("Categories *", enum_of(TOOL_SCHEMA, "categories"), multi=True, description=REQUIRED_NOTE),
+    text("Agent Model", "How agents participate: managed workers, identity-holding peers, orchestrated teams. What shape of organization the tool makes possible — the reason this collection exists.", multiline=True),
+    text("Human Controls", "The oversight primitives the tool ships: budget caps, approval gates, pause and terminate, permission scopes, audit trails. Concrete mechanisms, not assurances. If it provides none, say so — that is a finding.", multiline=True),
+    text("Maintainer", "The organization or project behind the tool. Never an individual."),
+    select("Open Source", enum_of(TOOL_SCHEMA, "open_source"),
+           description="Tri-state, so an unresearched tool is never silently recorded as proprietary."),
+    text("License", "SPDX identifier (MIT, Apache-2.0, AGPL-3.0) or 'proprietary'."),
+    select("Self Hostable", enum_of(TOOL_SCHEMA, "self_hostable")),
+    select("Model Agnostic", enum_of(TOOL_SCHEMA, "model_agnostic")),
+    text("Languages", "Primary implementation languages, comma-separated."),
+    text("Protocols", "Open protocols the tool speaks (nostr, mcp, a2a), comma-separated."),
+    text("Used By", "Registry ID slugs of AOs known to run on this, comma-separated. The cross-link between the two collections."),
+    url("Link: Docs"), url("Link: Repo"), url("Link: Blog"), url("Link: Forum"),
+    url("Link: X"), url("Link: Discord"),
+    select("Verification Method *", enum_of(TOOL_SCHEMA, "verification", "properties", "method"), description=REQUIRED_NOTE),
+    date("Verified On *", REQUIRED_NOTE),
+    text("Verified By", "Role or handle of the reviewer — never personal contact details."),
+    text("Verification Notes", multiline=True),
+    text("Tags", "Comma-separated, lowercase-hyphenated."),
+    date("Added"), date("Updated"),
+    REVIEW_STATE,
     text("Notes", "Internal maintainer notes. Never published.", multiline=True),
 ]
 
@@ -193,54 +190,66 @@ INTAKE_FIELDS = [
     {"name": "Issue Number", "type": "number", "options": {"precision": 0},
      "description": "The upsert key — an edited issue updates its row rather than creating a second."},
     url("Issue URL"),
-    select("Type", [{"name": "New AO"}, {"name": "Correction"}]),
+    select("Type", [{"name": "New AO"}, {"name": "New Tool"}, {"name": "Correction"}]),
     select("Status", [
         {"name": "New"}, {"name": "In review"}, {"name": "Needs info"},
         {"name": "Accepted"}, {"name": "Declined"}, {"name": "Duplicate"},
-    ], description="Set by reviewers. The sync never reads this table — acceptance means copying into Registry."),
-    text("Organization Name"),
+    ], description="Set by reviewers. The sync never reads this table — acceptance means copying into Registry or Tooling."),
+    text("Organization Name", "The name of whatever was submitted — organization or tool."),
     url("Website"),
     text("Summary", multiline=True),
-    text("Human Oversight", multiline=True),
+    text("Human Oversight", "For AOs: the controls described. For tools: the oversight it ships with.", multiline=True),
     text("Sources Given", "As submitted. Verify before copying anything across.", multiline=True),
-    text("Agent Roles Claimed", "Normalized to schema tokens, ready to copy into Registry."),
-    text("Autonomy Claimed", "What the submitter claims. Check it against the sources before believing it."),
-    text("Target Record ID", "For corrections: the registry slug being corrected."),
+    text("Agent Roles Claimed", "AO submissions. Normalized to schema tokens, ready to copy across."),
+    text("Autonomy Claimed", "AO submissions. What the submitter claims — check it against the sources before believing it."),
+    text("Tool Categories", "Tool submissions. Normalized to schema tokens."),
+    text("Agent Model Claimed", "Tool submissions: how agents participate, as described by the submitter.", multiline=True),
+    text("License", "Tool submissions."),
+    text("Used By", "Tool submissions: AOs the submitter says run on this."),
+    text("Target Record ID", "For corrections: the slug being corrected."),
     checkbox("Self Submission"),
     text("Raw Body", "The full issue body, so nothing is lost to parsing.", multiline=True),
     text("Reviewer Notes", multiline=True),
 ]
 
 TABLES = [
-    (REGISTRY_TABLE, "One row per autonomous organization. Source of truth for the public registry; rows with Published checked are synced to github.com/AO-Commons/registry.", REGISTRY_FIELDS),
-    (SOURCES_TABLE, "Evidence for registry claims. Linked from Registry — every published record needs at least one.", SOURCES_FIELDS),
-    (INTAKE_TABLE, "Submissions from the GitHub issue forms, awaiting review. Deliberately separate from Registry: a submission is a claim, a registry record is a verified claim.", INTAKE_FIELDS),
+    (REGISTRY_TABLE, "One row per autonomous organization — agents holding organizational authority. Rows with Published checked sync to github.com/AO-Commons/registry.", REGISTRY_FIELDS),
+    (TOOLING_TABLE, "Software that AOs are built on or run with. A tool is NOT an autonomous organization however many agents it hosts — that distinction is what makes the Registry worth citing.", TOOLING_FIELDS),
+    (SOURCES_TABLE, "Evidence for claims in both collections. Every published record needs at least one.", SOURCES_FIELDS),
+    (INTAKE_TABLE, "Submissions from the GitHub issue forms, awaiting review. Deliberately separate: a submission is a claim, a published record is a verified claim.", INTAKE_FIELDS),
 ]
 
-# Fields the required-ness formula checks, as (field name, kind).
-# "multi" covers multipleSelects and linked records, where an empty value is
-# still a non-empty cell and has to be measured rather than tested.
-BLOCKER_CHECKS = [
-    ("ID *", "single", "ID"),
-    ("Name *", "single", "Name"),
-    ("Summary *", "length20", "Summary(20+)"),
-    ("Status *", "single", "Status"),
-    ("Categories *", "multi", "Categories"),
-    ("Agent Roles *", "multi", "AgentRoles"),
-    ("Autonomy Level *", "single", "AutonomyLevel"),
-    ("Verification Method *", "single", "VerificationMethod"),
-    ("Verified On *", "single", "VerifiedOn"),
-    (SOURCES_LINK_FIELD, "multi", "Sources"),
-]
+# Required fields each table's Publish Blockers formula checks, as
+# (field name, kind, label). "multi" covers multipleSelects and linked
+# records, where an empty value is still a non-empty cell.
+BLOCKERS = {
+    REGISTRY_TABLE: [
+        ("ID *", "single", "ID"), ("Name *", "single", "Name"),
+        ("Summary *", "length20", "Summary(20+)"), ("Status *", "single", "Status"),
+        ("Categories *", "multi", "Categories"), ("Agent Roles *", "multi", "AgentRoles"),
+        ("Autonomy Level *", "single", "AutonomyLevel"),
+        ("Verification Method *", "single", "VerificationMethod"),
+        ("Verified On *", "single", "VerifiedOn"),
+        (SOURCES_LINK_FIELD, "multi", "Sources"),
+    ],
+    TOOLING_TABLE: [
+        ("ID *", "single", "ID"), ("Name *", "single", "Name"),
+        ("Summary *", "length20", "Summary(20+)"), ("Status *", "single", "Status"),
+        ("Categories *", "multi", "Categories"),
+        ("Verification Method *", "single", "VerificationMethod"),
+        ("Verified On *", "single", "VerifiedOn"),
+        (SOURCES_LINK_FIELD, "multi", "Sources"),
+    ],
+}
+
+LINKED_TABLES = [REGISTRY_TABLE, TOOLING_TABLE]
 
 
 def api(method: str, path: str, token: str, **kwargs) -> dict:
     response = requests.request(
-        method,
-        f"{META}/{path}",
+        method, f"{META}/{path}",
         headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
-        timeout=30,
-        **kwargs,
+        timeout=30, **kwargs,
     )
     if not response.ok:
         raise requests.HTTPError(f"{response.status_code}: {response.text}", response=response)
@@ -251,19 +260,18 @@ def fetch_tables(base_id: str, token: str) -> dict[str, dict]:
     return {table["name"]: table for table in api("GET", f"{base_id}/tables", token)["tables"]}
 
 
-def build_formulas(registry: dict) -> list[dict]:
+def build_formulas(table: dict, checks: list) -> list[dict]:
     """Formula fields, written against field IDs rather than names.
 
     Field IDs sidestep every escaping question a name like `ID *` would
     otherwise raise inside a formula string.
     """
-    ids = {field["name"]: field["id"] for field in registry["fields"]}
-    missing = [name for name, _, _ in BLOCKER_CHECKS if name not in ids]
-    if missing or "Name *" not in ids:
+    ids = {field["name"]: field["id"] for field in table["fields"]}
+    if any(name not in ids for name, _, _ in checks) or "Name *" not in ids:
         return []
 
     clauses = []
-    for name, kind, label in BLOCKER_CHECKS:
+    for name, kind, label in checks:
         ref = "{" + ids[name] + "}"
         if kind == "length20":
             clauses.append(f'IF(LEN({ref})>=20, "", "{label} ")')
@@ -274,23 +282,14 @@ def build_formulas(registry: dict) -> list[dict]:
 
     name_ref = "{" + ids["Name *"] + "}"
     return [
-        {
-            "name": "Publish Blockers",
-            "type": "formula",
-            "description": "Required fields still empty. Must be blank before Published is ticked.",
-            "options": {"formula": "TRIM(" + " & ".join(clauses) + ")"},
-        },
-        {
-            "name": "Suggested ID",
-            "type": "formula",
-            "description": "A slug derived from Name. Copy it into ID * — or override it; the slug need not match the name, and must never change once published.",
-            "options": {
-                "formula": (
-                    f'IF({name_ref}, LOWER(REGEX_REPLACE(REGEX_REPLACE(TRIM({name_ref}),'
-                    ' "[^a-zA-Z0-9]+", "-"), "^-+|-+$", "")), "")'
-                )
-            },
-        },
+        {"name": "Publish Blockers", "type": "formula",
+         "description": "Required fields still empty. Must be blank before Published is ticked.",
+         "options": {"formula": "TRIM(" + " & ".join(clauses) + ")"}},
+        {"name": "Suggested ID", "type": "formula",
+         "description": "A slug derived from Name. Copy it into ID * — or override it; the slug need not match the name, and must never change once published.",
+         "options": {"formula": (
+             f'IF({name_ref}, LOWER(REGEX_REPLACE(REGEX_REPLACE(TRIM({name_ref}),'
+             ' "[^a-zA-Z0-9]+", "-"), "^-+|-+$", "")), "")')}},
     ]
 
 
@@ -328,7 +327,6 @@ def main() -> int:
                     token, json={"name": new})
                 print(f"renamed {table_name}.{old} -> {new}")
                 changed += 1
-
     if changed:
         live = fetch_tables(base_id, token)
 
@@ -343,37 +341,39 @@ def main() -> int:
             print(f"added {table_name}.{field['name']} ({field['type']})")
             changed += 1
 
-    # 4. The link field, once both endpoints exist.
+    # 4. Link fields, once both endpoints exist. Both collections point at
+    #    the one Sources table.
     live = fetch_tables(base_id, token)
-    registry = live[REGISTRY_TABLE]
-    if SOURCES_LINK_FIELD not in {f["name"] for f in registry["fields"]}:
-        api("POST", f"{base_id}/tables/{registry['id']}/fields", token, json={
-            "name": SOURCES_LINK_FIELD,
-            "type": "multipleRecordLinks",
+    for table_name in LINKED_TABLES:
+        table = live[table_name]
+        if SOURCES_LINK_FIELD in {f["name"] for f in table["fields"]}:
+            continue
+        api("POST", f"{base_id}/tables/{table['id']}/fields", token, json={
+            "name": SOURCES_LINK_FIELD, "type": "multipleRecordLinks",
             "description": f"{REQUIRED_NOTE} Evidence for this record.",
             "options": {"linkedTableId": live[SOURCES_TABLE]["id"]},
         })
-        print(f"added {REGISTRY_TABLE}.{SOURCES_LINK_FIELD} (link to {SOURCES_TABLE})")
+        print(f"added {table_name}.{SOURCES_LINK_FIELD} (link to {SOURCES_TABLE})")
         changed += 1
-        live = fetch_tables(base_id, token)
-        registry = live[REGISTRY_TABLE]
+    live = fetch_tables(base_id, token)
 
     # 5. Formula fields last: they reference the IDs of everything above.
-    present = {field["name"] for field in registry["fields"]}
-    for formula in build_formulas(registry):
-        if formula["name"] in present:
-            continue
-        try:
-            api("POST", f"{base_id}/tables/{registry['id']}/fields", token, json=formula)
-            print(f"added {REGISTRY_TABLE}.{formula['name']} (formula)")
-            changed += 1
-        except requests.HTTPError as error:
-            # Some Airtable plans and API versions refuse formula creation.
-            # Not fatal: everything else is in place, and the field can be
-            # added by hand from the formula printed here.
-            print(f"\ncould not create {formula['name']}: {error}", file=sys.stderr)
-            print(f"add it manually with this formula:\n\n{formula['options']['formula']}\n",
-                  file=sys.stderr)
+    for table_name, checks in BLOCKERS.items():
+        table = live[table_name]
+        present = {field["name"] for field in table["fields"]}
+        for formula in build_formulas(table, checks):
+            if formula["name"] in present:
+                continue
+            try:
+                api("POST", f"{base_id}/tables/{table['id']}/fields", token, json=formula)
+                print(f"added {table_name}.{formula['name']} (formula)")
+                changed += 1
+            except requests.HTTPError as error:
+                # Some Airtable plans and API versions refuse formula
+                # creation. Not fatal: everything else is in place, and the
+                # field can be added by hand from the formula printed here.
+                print(f"\ncould not create {table_name}.{formula['name']}: {error}", file=sys.stderr)
+                print(f"add it manually with:\n\n{formula['options']['formula']}\n", file=sys.stderr)
 
     print(f"\n{changed} change(s) applied." if changed else "\nBase already matches the definitions.")
     print(f"  AIRTABLE_BASE_ID={base_id}\n")

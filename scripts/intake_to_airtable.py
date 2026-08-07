@@ -96,27 +96,46 @@ def main() -> int:
     url = os.environ.get("ISSUE_URL", "")
     sections = parse_issue_form(body)
 
-    is_correction = title.startswith("[Correction]") or "Record" in sections
+    # Which form was used decides which collection a reviewer copies it into.
+    if title.startswith("[Correction]") or "Record" in sections:
+        submission_type = "Correction"
+    elif title.startswith("[New Tool]") or "Tool name" in sections:
+        submission_type = "New Tool"
+    else:
+        submission_type = "New AO"
 
     fields = {
         "Submission": title or f"Issue #{issue_number}",
         "Issue Number": int(issue_number),
         "Issue URL": url,
-        "Type": "Correction" if is_correction else "New AO",
+        "Type": submission_type,
         "Status": "New",
         "Raw Body": body,
     }
 
     # Lift the fields a reviewer sorts by out of the raw body. Everything
     # else stays in Raw Body rather than being guessed into typed columns.
-    if name := sections.get("Organization name"):
+    # The two forms label the same concepts differently; normalize here so a
+    # reviewer sees one shape of row whichever form was used.
+    if name := sections.get("Organization name") or sections.get("Tool name"):
         fields["Organization Name"] = name
     if website := sections.get("Website"):
         fields["Website"] = website
     if summary := sections.get("What does it do?"):
         fields["Summary"] = summary
-    if oversight := sections.get("What keeps humans in control?"):
+    if oversight := (
+        sections.get("What keeps humans in control?")
+        or sections.get("What oversight does it ship with?")
+    ):
         fields["Human Oversight"] = oversight
+    if categories := sections.get("What is it for?"):
+        fields["Tool Categories"] = ", ".join(checked_options(categories))
+    if agent_model := sections.get("How do agents participate?"):
+        fields["Agent Model Claimed"] = agent_model
+    if license_ := sections.get("License"):
+        fields["License"] = license_
+    if used_by := sections.get("Known users"):
+        fields["Used By"] = used_by
     if sources := sections.get("Sources"):
         fields["Sources Given"] = sources
     if record := sections.get("Record"):

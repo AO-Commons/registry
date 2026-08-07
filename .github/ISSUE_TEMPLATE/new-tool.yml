@@ -1,0 +1,126 @@
+name: Add a tool
+description: Submit software that autonomous organizations are built on or run with.
+title: "[New Tool] "
+labels: ["intake", "new-tool"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This is for **tooling** — software AOs run on. If you're submitting an organization where agents hold real authority, use [Add an organization](?template=new-ao.yml) instead.
+
+        The distinction: an orchestration platform is a tool, even when it runs a hundred agents. The company using it to let agents allocate its budget is an AO. Tools are listed here on their own merits; nothing about being a tool is a lesser listing.
+
+        Self-submissions are welcome and are labelled `self-reported` — a description of how we verified the record, not a lower tier.
+
+  - type: input
+    id: name
+    attributes:
+      label: Tool name
+    validations:
+      required: true
+
+  - type: input
+    id: website
+    attributes:
+      label: Website
+      placeholder: https://example.dev
+    validations:
+      required: true
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: What does it do?
+      description: One or two sentences, descriptive rather than promotional. We'll edit for neutrality if needed.
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: categories
+    attributes:
+      label: What is it for?
+      options:
+        - label: Orchestration — running and coordinating agents
+        - label: Collaboration — shared workspaces for humans and agents
+        - label: Identity — agent identity, keys, or credentials
+        - label: Payments — agents holding or moving value
+        - label: Governance — proposals, voting, decision records
+        - label: Observability — traces, costs, audit trails
+        - label: Memory — persistent state or knowledge across runs
+        - label: Evaluation — testing or benchmarking agent behavior
+        - label: Marketplace — discovering or hiring agents
+        - label: Infrastructure — hosting, runtimes, sandboxes
+        - label: Security — sandboxing, permissions, isolation
+        - label: Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: agent_model
+    attributes:
+      label: How do agents participate?
+      description: |
+        Are agents managed workers a human assigns tasks to? Identity-holding peers with their own permissions? Orchestrated teams with an internal structure? This is what tells readers which shapes of organization the tool makes possible.
+      placeholder: Agents are workers a human assigns goals to. They don't hold budget authority or set direction.
+    validations:
+      required: true
+
+  - type: textarea
+    id: human_controls
+    attributes:
+      label: What oversight does it ship with?
+      description: |
+        Concrete built-in mechanisms — spending caps, approval gates, pause and terminate, permission scopes, audit trails.
+
+        If it ships none, say so. That's a finding worth recording, not a mark against the tool.
+      placeholder: Per-agent spending caps that pause execution when reached; human approval required before an agent acts outside its brief.
+    validations:
+      required: true
+
+  - type: input
+    id: license
+    attributes:
+      label: License
+      description: SPDX identifier (MIT, Apache-2.0, AGPL-3.0) or "proprietary".
+      placeholder: Apache-2.0
+
+  - type: input
+    id: repo
+    attributes:
+      label: Source repository
+      placeholder: https://github.com/example/tool
+
+  - type: input
+    id: used_by
+    attributes:
+      label: Known users
+      description: Any autonomous organizations you know run on this, comma-separated. Helps us link the two collections.
+
+  - type: textarea
+    id: sources
+    attributes:
+      label: Sources
+      description: |
+        Links backing the claims above — docs, repository, release notes, announcement posts. **At least one required.** A landing page saying "AI-powered" tells us the tool exists, not how it works.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: relationship
+    attributes:
+      label: Your relationship to this tool
+      options:
+        - "I work on / with it — this is a self-submission"
+        - "No relationship — I'm submitting it as an observer"
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: confirm
+    attributes:
+      label: Before submitting
+      options:
+        - label: I've included at least one source link.
+          required: true
+        - label: This submission contains no one's personal contact details.
+          required: true

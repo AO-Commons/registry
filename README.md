@@ -12,12 +12,19 @@ Each record states how much authority agents actually exercise (`autonomy_level`
 
 ## Using the data
 
+Two collections, deliberately separate:
+
 | Path | What it is |
 |---|---|
-| [data/aos/](data/aos/) | One YAML file per organization, named `<id>.yml` |
-| [data/registry.json](data/) | All records in a single JSON file, for programmatic use |
-| [schema/ao.schema.json](schema/ao.schema.json) | JSON Schema every record validates against |
+| [data/aos/](data/aos/) | One YAML file per **organization**, named `<id>.yml` |
+| [data/tools/](data/tools/) | One YAML file per **tool** — software AOs are built on or run with |
+| [data/registry.json](data/) · [data/tooling.json](data/) | Each collection in a single JSON file, for programmatic use |
+| [schema/ao.schema.json](schema/ao.schema.json) · [schema/tool.schema.json](schema/tool.schema.json) | The schemas records validate against |
 | [schema/README.md](schema/README.md) | What each field means and how to read it |
+
+**A tool is not an AO**, however many agents it hosts. An orchestration platform running a hundred agents is a tool; the company using it to let agents allocate its budget is an AO. Keeping them apart is what makes the registry's membership criterion mean anything — so they have different schemas, and a tool has no `autonomy_level` while an organization has no `license`.
+
+They share a repository because they cross-reference: a tool's `used_by` lists the organizations known to run on it.
 
 Record `id`s are stable and safe to cite. They never change, even when an organization renames itself — the old name moves to `aliases`.
 
@@ -28,6 +35,7 @@ Data is licensed [CC BY 4.0](LICENSE). Use it, build on it, cite it.
 Open an issue — there are forms for both:
 
 - **[Add an organization](../../issues/new?template=new-ao.yml)** — including your own. Self-submissions are welcome and are labelled `self-reported` rather than treated as lesser.
+- **[Add a tool](../../issues/new?template=new-tool.yml)** — software AOs run on.
 - **[Correct an entry](../../issues/new?template=correction.yml)** — especially where we've overstated or understated autonomy. Corrections with sources are the most useful thing you can send us.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for what happens next.
