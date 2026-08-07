@@ -24,6 +24,7 @@ import sys
 import requests
 
 import setup_airtable_base as setup
+from airtable_fields import SOURCES_LINK_FIELD
 
 META = "https://api.airtable.com/v0/meta/bases"
 
@@ -90,20 +91,32 @@ def main() -> int:
                     )
 
         expected_names = {field["name"] for field in expected_fields}
-        # The Sources link and Airtable's auto-created reverse links are
-        # expected to be present without appearing in the definitions.
-        expected_names |= {"Sources", setup.REGISTRY_TABLE, setup.INTAKE_TABLE}
+        # The link field, the formula fields, and Airtable's auto-created
+        # reverse links all exist without appearing in the table definitions.
+        expected_names |= {
+            SOURCES_LINK_FIELD,
+            "Publish Blockers",
+            "Suggested ID",
+            setup.REGISTRY_TABLE,
+            setup.SOURCES_TABLE,
+            setup.INTAKE_TABLE,
+        }
         for name in sorted(set(live_fields) - expected_names):
             extra.append(f"{table_name}.{name} ({live_fields[name]['type']})")
 
     # The one field created separately, after both endpoints existed.
     registry = live.get(setup.REGISTRY_TABLE)
     if registry:
-        link = next((f for f in registry["fields"] if f["name"] == "Sources"), None)
+        link = next((f for f in registry["fields"] if f["name"] == SOURCES_LINK_FIELD), None)
         if link is None:
-            missing.append(f"{setup.REGISTRY_TABLE}.Sources (link to {setup.SOURCES_TABLE})")
+            missing.append(
+                f"{setup.REGISTRY_TABLE}.{SOURCES_LINK_FIELD} (link to {setup.SOURCES_TABLE})"
+            )
         elif link["type"] != "multipleRecordLinks":
-            drift.append(f"{setup.REGISTRY_TABLE}.Sources is {link['type']}, expected a link field")
+            drift.append(
+                f"{setup.REGISTRY_TABLE}.{SOURCES_LINK_FIELD} is {link['type']}, "
+                "expected a link field"
+            )
 
     for label, findings in (("MISSING", missing), ("DRIFT", drift), ("EXTRA", extra)):
         if findings:

@@ -89,6 +89,23 @@ Intake and registry are **separate tables**. A submission is a claim; a record i
    python3 scripts/sync_from_airtable.py && python3 scripts/validate.py
    ```
 
+## The one piece that isn't code
+
+Airtable automations have no public REST API, so this is set up by hand — once, in about a minute. It enforces that **Published can't stay ticked on an incomplete record**:
+
+> **Trigger:** When record matches conditions
+> — Table `Registry`, conditions: `Published` is checked **AND** `Publish Blockers` is not empty
+>
+> **Action:** Update record (the triggering record)
+> — `Published` → unchecked
+> — `Review State` → `Insufficient information`
+
+`Publish Blockers` is a formula field listing the required fields still empty; it's blank exactly when a record is publishable. Required fields are marked with a trailing `*` in their names, so the requirement is visible in the grid without consulting docs.
+
+Note what `Review State` is *not*: it is not the schema's `status`. `status` describes the organization (`active`, `dormant`, `sunset`); `Review State` describes our confidence in the record. Putting "insufficient information" into `status` would emit records that fail validation, and [check_airtable_base.py](check_airtable_base.py) would report it as drift. The two vocabularies are asserted disjoint in [../tests/test_mapping.py](../tests/test_mapping.py).
+
+This automation is defence in depth rather than the primary guard — the sync already refuses to publish a record that fails validation, and would do so even if the automation were deleted. It exists so the failure surfaces in Airtable, at the moment someone ticks the box, instead of hours later in a sync log.
+
 ## Two things this gets right, deliberately
 
 **The token is scoped to the registry base only.** A workspace-wide token sitting in a *public* repository's Actions secrets is one workflow-injection bug away from reading the CRM. The blast radius should be data that is already public.

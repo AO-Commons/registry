@@ -1,28 +1,37 @@
 """The mapping between Airtable field names and schema keys.
 
 Kept in one place because it's the seam where the two sides of the sync have
-to agree. Both sync_from_airtable.py and intake_to_airtable.py import it, and
-a field renamed in Airtable is a change here.
+to agree. The other Airtable scripts import it, and a field renamed in
+Airtable is a change here.
 
 Airtable field names are human-facing (Title Case, spaces); schema keys are
 snake_case. Enum values are stored in Airtable exactly as the schema spells
 them, so the sync stays a copy rather than a translation layer nobody wants
 to maintain.
+
+A trailing `*` marks a field the schema requires — a record missing any of
+them cannot be published. The marker is part of the field name, so it shows
+up in the Airtable UI without anyone having to consult documentation.
 """
 
 REGISTRY_TABLE = "Registry"
 SOURCES_TABLE = "Sources"
 INTAKE_TABLE = "Intake"
 
+# Fields the sync reads by name rather than through a mapping.
+PUBLISHED_FIELD = "Published"
+SOURCES_LINK_FIELD = "Sources *"
+SUPPORTS_FIELD = "Supports"
+
 # Airtable field name -> schema key, for values that copy across unchanged.
 SIMPLE_FIELDS = {
-    "ID": "id",
-    "Name": "name",
-    "Summary": "summary",
+    "ID *": "id",
+    "Name *": "name",
+    "Summary *": "summary",
     "Website": "website",
-    "Status": "status",
+    "Status *": "status",
     "Launched": "launched",
-    "Autonomy Level": "autonomy_level",
+    "Autonomy Level *": "autonomy_level",
     "Human Oversight": "human_oversight",
     "Governance Model": "governance_model",
     "Legal Wrapper": "legal_wrapper",
@@ -33,8 +42,8 @@ SIMPLE_FIELDS = {
 
 # Airtable multipleSelects -> schema arrays.
 MULTI_SELECT_FIELDS = {
-    "Categories": "categories",
-    "Agent Roles": "agent_roles",
+    "Categories *": "categories",
+    "Agent Roles *": "agent_roles",
 }
 
 # Comma-separated singleLineText -> schema arrays. Airtable has no plain list
@@ -67,21 +76,32 @@ LINK_FIELDS = {
 
 # Airtable field name -> key under `verification`.
 VERIFICATION_FIELDS = {
-    "Verification Method": "method",
-    "Verified On": "verified_on",
+    "Verification Method *": "method",
+    "Verified On *": "verified_on",
     "Verified By": "verified_by",
     "Verification Notes": "notes",
 }
 
 # Sources table field name -> key in a `sources[]` entry.
 SOURCE_FIELDS = {
-    "URL": "url",
+    "URL *": "url",
     "Title": "title",
-    "Accessed": "accessed",
+    "Accessed *": "accessed",
 }
 
 # Fields that exist for maintainers and never reach the published data.
-INTERNAL_ONLY = {"Published", "Notes", "Intake", "Sources"}
+# Review State in particular is deliberately NOT the schema's `status`:
+# "insufficient information" describes our knowledge, not the organization,
+# and putting it in `status` would produce records that fail validation.
+INTERNAL_ONLY = {
+    "Published",
+    "Review State",
+    "Publish Blockers",
+    "Suggested ID",
+    "Notes",
+    "Intake",
+    "Registry",
+}
 
 # The order keys appear in generated YAML. Stable ordering keeps diffs
 # meaningful — without it every sync run reshuffles every file.

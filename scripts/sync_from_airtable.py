@@ -31,11 +31,14 @@ from airtable_fields import (
     MULTI_SELECT_FIELDS,
     ONCHAIN_CHECKBOX,
     ONCHAIN_LIST_FIELDS,
+    PUBLISHED_FIELD,
     REGISTRY_TABLE,
     SCHEMA_VERSION,
     SIMPLE_FIELDS,
     SOURCE_FIELDS,
+    SOURCES_LINK_FIELD,
     SOURCES_TABLE,
+    SUPPORTS_FIELD,
     VERIFICATION_FIELDS,
 )
 
@@ -128,7 +131,7 @@ def build_record(row: dict, sources_by_id: dict[str, dict]) -> dict:
         record["verification"] = verification
 
     sources = []
-    for source_id in fields.get("Sources", []):
+    for source_id in fields.get(SOURCES_LINK_FIELD, []):
         source_row = sources_by_id.get(source_id)
         if not source_row:
             continue
@@ -138,7 +141,7 @@ def build_record(row: dict, sources_by_id: dict[str, dict]) -> dict:
             for airtable_name, key in SOURCE_FIELDS.items()
             if source_fields.get(airtable_name)
         }
-        if supports := split_list(source_fields.get("Supports")):
+        if supports := split_list(source_fields.get(SUPPORTS_FIELD)):
             source["supports"] = supports
         if source.get("url"):
             sources.append(source)
@@ -174,7 +177,7 @@ def main() -> int:
 
     rows = fetch_all(base_id, REGISTRY_TABLE, token)
     sources_by_id = {row["id"]: row for row in fetch_all(base_id, SOURCES_TABLE, token)}
-    published = [row for row in rows if row.get("fields", {}).get("Published")]
+    published = [row for row in rows if row.get("fields", {}).get(PUBLISHED_FIELD)]
     report(f"Fetched {len(rows)} record(s), {len(published)} published.")
 
     valid: dict[str, dict] = {}

@@ -4,7 +4,7 @@
   "title": "Autonomous Organization",
   "description": "One record in the AO Commons registry. Schema version 0.1 — expect breaking changes until 1.0.",
   "type": "object",
-  "required": ["id", "name", "summary", "status", "agent_roles", "autonomy_level", "sources", "verification"],
+  "required": ["id", "name", "summary", "status", "categories", "agent_roles", "autonomy_level", "sources", "verification"],
   "additionalProperties": false,
   "properties": {
     "schema_version": {

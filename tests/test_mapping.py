@@ -52,22 +52,52 @@ def field_options(fields: list[dict], name: str) -> list[str]:
 # layer, and translation layers rot.
 
 ENUM_FIELDS = {
-    "Status": PROPS["status"]["enum"],
-    "Categories": PROPS["categories"]["items"]["enum"],
-    "Agent Roles": PROPS["agent_roles"]["items"]["enum"],
-    "Autonomy Level": PROPS["autonomy_level"]["enum"],
+    "Status *": PROPS["status"]["enum"],
+    "Categories *": PROPS["categories"]["items"]["enum"],
+    "Agent Roles *": PROPS["agent_roles"]["items"]["enum"],
+    "Autonomy Level *": PROPS["autonomy_level"]["enum"],
     "Governance Model": PROPS["governance_model"]["enum"],
     "Legal Wrapper": PROPS["legal_wrapper"]["enum"],
-    "Verification Method": PROPS["verification"]["properties"]["method"]["enum"],
+    "Verification Method *": PROPS["verification"]["properties"]["method"]["enum"],
 }
 for name, expected in ENUM_FIELDS.items():
     assert field_options(setup.REGISTRY_FIELDS, name) == expected, f"{name} options drifted"
 check(f"Airtable select options equal schema enums ({len(ENUM_FIELDS)} fields)")
 
+# Review State must never share a vocabulary with the schema's `status`.
+# "insufficient information" describes our knowledge, not the organization;
+# putting it in Status would produce records that fail validation.
+review_states = set(field_options(setup.REGISTRY_FIELDS, "Review State"))
+assert not (review_states & set(PROPS["status"]["enum"])), (
+    f"Review State overlaps the schema status vocabulary: "
+    f"{review_states & set(PROPS['status']['enum'])}"
+)
+assert "Review State" in AF.INTERNAL_ONLY, "Review State must never be published"
+check("Review State is internal-only and shares no values with schema status")
+
+
+# --- The `*` marker must mean exactly "the schema requires this" -----------
+
+SCHEMA_REQUIRED = set(SCHEMA["required"])
+starred = {
+    f["name"].removesuffix(" *")
+    for f in setup.REGISTRY_FIELDS
+    if f["name"].endswith(" *")
+} | {"sources"}  # the link field, defined separately
+mapped = {**AF.SIMPLE_FIELDS, **AF.MULTI_SELECT_FIELDS}
+starred_keys = {mapped[name] for name in mapped if name.endswith(" *")}
+starred_keys |= {"verification", "sources"}
+assert starred_keys == SCHEMA_REQUIRED, (
+    f"starred fields and schema-required keys disagree: "
+    f"starred-only {starred_keys - SCHEMA_REQUIRED}, "
+    f"required-only {SCHEMA_REQUIRED - starred_keys}"
+)
+check(f"every `*` field maps to a schema-required key, and vice versa ({len(SCHEMA_REQUIRED)})")
+
 
 # --- Every field a script reads or writes must exist in the base ------------
 
-registry_names = {f["name"] for f in setup.REGISTRY_FIELDS} | {"Sources"}
+registry_names = {f["name"] for f in setup.REGISTRY_FIELDS} | {AF.SOURCES_LINK_FIELD}
 sync_reads = (
     set(AF.SIMPLE_FIELDS)
     | set(AF.MULTI_SELECT_FIELDS)
@@ -75,13 +105,13 @@ sync_reads = (
     | set(AF.LINK_FIELDS)
     | set(AF.VERIFICATION_FIELDS)
     | set(AF.ONCHAIN_LIST_FIELDS)
-    | {AF.ONCHAIN_CHECKBOX, "Published", "Sources"}
+    | {AF.ONCHAIN_CHECKBOX, AF.PUBLISHED_FIELD, AF.SOURCES_LINK_FIELD}
 )
 assert not (sync_reads - registry_names), f"sync reads absent fields: {sync_reads - registry_names}"
 check(f"every field the sync reads exists in the base ({len(sync_reads)})")
 
 source_names = {f["name"] for f in setup.SOURCES_FIELDS}
-assert not ((set(AF.SOURCE_FIELDS) | {"Supports"}) - source_names)
+assert not ((set(AF.SOURCE_FIELDS) | {AF.SUPPORTS_FIELD}) - source_names)
 check("every Sources field the sync reads exists")
 
 INTAKE_WRITES = {
@@ -160,31 +190,32 @@ check("issue-form parsing, including unticked boxes and empty responses")
 ROW = {
     "id": "recAAAAAAAAAAAAAA",
     "fields": {
-        "ID": "example-collective", "Name": "Example Collective",
+        "ID *": "example-collective", "Name *": "Example Collective",
         "Aliases": "Example DAO, ExCo",
-        "Summary": "A research collective in which agents draft and screen grant proposals.",
-        "Website": "https://example.org", "Status": "active", "Launched": "2025-03",
-        "Categories": ["research", "grantmaking"], "Agent Roles": ["leadership", "research"],
-        "Autonomy Level": "delegated",
+        "Summary *": "A research collective in which agents draft and screen grant proposals.",
+        "Website": "https://example.org", "Status *": "active", "Launched": "2025-03",
+        "Categories *": ["research", "grantmaking"], "Agent Roles *": ["leadership", "research"],
+        "Autonomy Level *": "delegated",
         "Human Oversight": "Disbursements above $5,000 require a 3-of-5 signature.",
         "Governance Model": "multisig", "Agent Stack": "Claude, custom orchestration",
         "Legal Wrapper": "nonprofit", "Jurisdiction": "US-CA",
         "Is Onchain": True, "Chains": "ethereum",
         "Contracts": "ethereum:0x0000000000000000000000000000000000000000",
         "Link: Docs": "https://docs.example.org",
-        "Verification Method": "documented", "Verified On": "2026-08-01",
+        "Verification Method *": "documented", "Verified On *": "2026-08-01",
         "Verified By": "ao-commons-research", "Tags": "grants, human-in-the-loop",
         "Added": "2026-08-01", "Updated": "2026-08-01", "Published": True,
+        "Review State": "Ready to publish",
         "Notes": "INTERNAL REVIEWER NOTE — must never be published",
-        "Sources": ["recS2", "recS1"],
+        AF.SOURCES_LINK_FIELD: ["recS2", "recS1"],
     },
 }
 SOURCES = {
-    "recS2": {"id": "recS2", "fields": {"URL": "https://example.org/blog/launch",
-                                        "Title": "Launch", "Accessed": "2026-08-01",
+    "recS2": {"id": "recS2", "fields": {"URL *": "https://example.org/blog/launch",
+                                        "Title": "Launch", "Accessed *": "2026-08-01",
                                         "Supports": "launched"}},
-    "recS1": {"id": "recS1", "fields": {"URL": "https://example.org/governance",
-                                        "Title": "Governance", "Accessed": "2026-08-01",
+    "recS1": {"id": "recS1", "fields": {"URL *": "https://example.org/governance",
+                                        "Title": "Governance", "Accessed *": "2026-08-01",
                                         "Supports": "autonomy_level, human_oversight"}},
 }
 
@@ -215,7 +246,7 @@ unchecked = build_record({"id": "recB", "fields": {**ROW["fields"], "Is Onchain"
 assert unchecked["onchain"] == {"is_onchain": False}, "unchecked means not-onchain, not unknown"
 check("an unchecked on-chain box means 'not on-chain', not 'unknown'")
 
-sourceless = build_record({"id": "recC", "fields": {**ROW["fields"], "Sources": []}}, SOURCES)
+sourceless = build_record({"id": "recC", "fields": {**ROW["fields"], AF.SOURCES_LINK_FIELD: []}}, SOURCES)
 assert list(VALIDATOR.iter_errors(sourceless)), "a sourceless record must fail validation"
 check("a record with no sources fails rather than publishing")
 

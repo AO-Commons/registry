@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
-"""Build the registry base's tables and fields in an empty Airtable base.
+"""Apply the defined table structure to the Airtable registry base.
 
-Run once against a newly created, empty base. Safe to re-run: existing tables
-are reported and skipped rather than duplicated or overwritten.
+Converges rather than creates: missing tables are created, missing fields are
+added, and fields listed in RENAMES are renamed in place. Safe to re-run, and
+safe to run against a base that already holds records — it never deletes a
+field or drops data.
 
 Every single-select and multi-select option is derived from
 schema/ao.schema.json at runtime, so the Airtable vocabulary cannot drift
@@ -13,8 +15,8 @@ to avoid — a base whose options say "Delegated" while the schema says
 Usage:  python3 scripts/setup_airtable_base.py
 Env:    AIRTABLE_TOKEN, AIRTABLE_BASE_ID
 
-The token needs schema.bases:write, which the *runtime* sync token should
-NOT have. Use a separate short-lived token here and delete it afterwards.
+The token needs schema.bases:write, which the runtime sync token should NOT
+have.
 
 Requires: pip install requests
 """
@@ -26,13 +28,39 @@ from pathlib import Path
 
 import requests
 
-from airtable_fields import INTAKE_TABLE, REGISTRY_TABLE, SOURCES_TABLE
+from airtable_fields import (
+    INTAKE_TABLE,
+    REGISTRY_TABLE,
+    SOURCES_LINK_FIELD,
+    SOURCES_TABLE,
+)
 
 ROOT = Path(__file__).resolve().parent.parent
 SCHEMA = json.loads((ROOT / "schema" / "ao.schema.json").read_text())
 META = "https://api.airtable.com/v0/meta/bases"
 
 PROPERTIES = SCHEMA["properties"]
+
+# Applied before fields are created, so an existing base converges onto the
+# current names instead of accumulating duplicates alongside them.
+RENAMES = {
+    REGISTRY_TABLE: {
+        "ID": "ID *",
+        "Name": "Name *",
+        "Summary": "Summary *",
+        "Status": "Status *",
+        "Categories": "Categories *",
+        "Agent Roles": "Agent Roles *",
+        "Autonomy Level": "Autonomy Level *",
+        "Verification Method": "Verification Method *",
+        "Verified On": "Verified On *",
+        "Sources": SOURCES_LINK_FIELD,
+    },
+    SOURCES_TABLE: {
+        "URL": "URL *",
+        "Accessed": "Accessed *",
+    },
+}
 
 
 def enum_of(*path: str) -> list[dict]:
@@ -91,26 +119,28 @@ def select(name: str, choices: list[dict], multi: bool = False, description: str
     return field
 
 
+REQUIRED_NOTE = "Required — a record missing this cannot be published."
+
 REGISTRY_FIELDS = [
-    text("ID", "Stable slug, matches the published filename. Never change it once published — citations depend on it."),
-    text("Name", "The organization's own name for itself."),
+    text("ID *", f"{REQUIRED_NOTE} Stable lowercase-hyphenated slug; becomes the published filename. Never change it once published — citations depend on it."),
+    text("Name *", f"{REQUIRED_NOTE} The organization's own name for itself."),
     checkbox("Published", "The sync gate. Unchecked records are invisible to the public repo."),
-    select("Status", enum_of("status"), description="Operating state as of the last verification."),
-    text("Summary", "One or two neutral sentences. Descriptive, not promotional.", multiline=True),
+    select("Status *", enum_of("status"), description=f"{REQUIRED_NOTE} The organization's operating state — not our confidence in the record. See Review State for that."),
+    text("Summary *", f"{REQUIRED_NOTE} At least 20 characters. One or two neutral sentences, descriptive rather than promotional.", multiline=True),
     url("Website"),
     text("Aliases", "Former or alternative names, comma-separated."),
     text("Launched", "YYYY, YYYY-MM, or YYYY-MM-DD — whatever precision the evidence supports. Text, not a date, so partial precision survives."),
-    select("Categories", enum_of("categories"), multi=True),
+    select("Categories *", enum_of("categories"), multi=True, description=REQUIRED_NOTE),
     select(
-        "Agent Roles",
+        "Agent Roles *",
         enum_of("agent_roles"),
         multi=True,
-        description="Which organizational functions agents hold. The membership criterion — authority, not tooling.",
+        description=f"{REQUIRED_NOTE} Which organizational functions agents hold. The membership criterion — authority, not tooling.",
     ),
     select(
-        "Autonomy Level",
+        "Autonomy Level *",
         enum_of("autonomy_level"),
-        description="What the evidence supports, NOT what the organization claims. Use 'undetermined' when sources conflict.",
+        description=f"{REQUIRED_NOTE} What the evidence supports, NOT what the organization claims. 'undetermined' is a legitimate answer when sources conflict.",
     ),
     text(
         "Human Oversight",
@@ -131,20 +161,30 @@ REGISTRY_FIELDS = [
     url("Link: X"),
     url("Link: Discord"),
     url("Link: Farcaster"),
-    select("Verification Method", enum_of("verification", "properties", "method")),
-    date("Verified On"),
+    select("Verification Method *", enum_of("verification", "properties", "method"), description=REQUIRED_NOTE),
+    date("Verified On *", REQUIRED_NOTE),
     text("Verified By", "Role or handle of the reviewer — never personal contact details."),
     text("Verification Notes", multiline=True),
     text("Tags", "Comma-separated, lowercase-hyphenated."),
     date("Added"),
     date("Updated"),
+    select(
+        "Review State",
+        [
+            {"name": "Draft"},
+            {"name": "Needs sources"},
+            {"name": "Insufficient information"},
+            {"name": "Ready to publish"},
+        ],
+        description="Our confidence in the record, for maintainers only. Never published — deliberately separate from Status, which describes the organization.",
+    ),
     text("Notes", "Internal maintainer notes. Never published.", multiline=True),
 ]
 
 SOURCES_FIELDS = [
-    url("URL"),
+    url("URL *", REQUIRED_NOTE),
     text("Title"),
-    date("Accessed"),
+    date("Accessed *", REQUIRED_NOTE),
     text("Supports", "Which schema fields this source is evidence for, comma-separated. This is what makes a claim auditable."),
 ]
 
@@ -177,6 +217,22 @@ TABLES = [
     (INTAKE_TABLE, "Submissions from the GitHub issue forms, awaiting review. Deliberately separate from Registry: a submission is a claim, a registry record is a verified claim.", INTAKE_FIELDS),
 ]
 
+# Fields the required-ness formula checks, as (field name, kind).
+# "multi" covers multipleSelects and linked records, where an empty value is
+# still a non-empty cell and has to be measured rather than tested.
+BLOCKER_CHECKS = [
+    ("ID *", "single", "ID"),
+    ("Name *", "single", "Name"),
+    ("Summary *", "length20", "Summary(20+)"),
+    ("Status *", "single", "Status"),
+    ("Categories *", "multi", "Categories"),
+    ("Agent Roles *", "multi", "AgentRoles"),
+    ("Autonomy Level *", "single", "AutonomyLevel"),
+    ("Verification Method *", "single", "VerificationMethod"),
+    ("Verified On *", "single", "VerifiedOn"),
+    (SOURCES_LINK_FIELD, "multi", "Sources"),
+]
+
 
 def api(method: str, path: str, token: str, **kwargs) -> dict:
     response = requests.request(
@@ -187,9 +243,55 @@ def api(method: str, path: str, token: str, **kwargs) -> dict:
         **kwargs,
     )
     if not response.ok:
-        print(f"\nAirtable API error {response.status_code}: {response.text}", file=sys.stderr)
-        response.raise_for_status()
+        raise requests.HTTPError(f"{response.status_code}: {response.text}", response=response)
     return response.json()
+
+
+def fetch_tables(base_id: str, token: str) -> dict[str, dict]:
+    return {table["name"]: table for table in api("GET", f"{base_id}/tables", token)["tables"]}
+
+
+def build_formulas(registry: dict) -> list[dict]:
+    """Formula fields, written against field IDs rather than names.
+
+    Field IDs sidestep every escaping question a name like `ID *` would
+    otherwise raise inside a formula string.
+    """
+    ids = {field["name"]: field["id"] for field in registry["fields"]}
+    missing = [name for name, _, _ in BLOCKER_CHECKS if name not in ids]
+    if missing or "Name *" not in ids:
+        return []
+
+    clauses = []
+    for name, kind, label in BLOCKER_CHECKS:
+        ref = "{" + ids[name] + "}"
+        if kind == "length20":
+            clauses.append(f'IF(LEN({ref})>=20, "", "{label} ")')
+        elif kind == "multi":
+            clauses.append(f'IF(LEN(ARRAYJOIN({ref}))>0, "", "{label} ")')
+        else:
+            clauses.append(f'IF({ref}, "", "{label} ")')
+
+    name_ref = "{" + ids["Name *"] + "}"
+    return [
+        {
+            "name": "Publish Blockers",
+            "type": "formula",
+            "description": "Required fields still empty. Must be blank before Published is ticked.",
+            "options": {"formula": "TRIM(" + " & ".join(clauses) + ")"},
+        },
+        {
+            "name": "Suggested ID",
+            "type": "formula",
+            "description": "A slug derived from Name. Copy it into ID * — or override it; the slug need not match the name, and must never change once published.",
+            "options": {
+                "formula": (
+                    f'IF({name_ref}, LOWER(REGEX_REPLACE(REGEX_REPLACE(TRIM({name_ref}),'
+                    ' "[^a-zA-Z0-9]+", "-"), "^-+|-+$", "")), "")'
+                )
+            },
+        },
+    ]
 
 
 def main() -> int:
@@ -199,54 +301,83 @@ def main() -> int:
         print("AIRTABLE_TOKEN and AIRTABLE_BASE_ID must be set.", file=sys.stderr)
         return 2
 
-    existing = {t["name"]: t for t in api("GET", f"{base_id}/tables", token).get("tables", [])}
-    created: dict[str, str] = {}
+    live = fetch_tables(base_id, token)
+    changed = 0
 
+    # 1. Tables.
     for name, description, fields in TABLES:
-        if name in existing:
-            print(f"- {name}: already exists, skipping ({len(existing[name]['fields'])} fields)")
-            created[name] = existing[name]["id"]
+        if name in live:
             continue
-        result = api(
-            "POST",
-            f"{base_id}/tables",
-            token,
-            json={"name": name, "description": description, "fields": fields},
-        )
-        created[name] = result["id"]
-        print(f"- {name}: created with {len(fields)} fields")
+        api("POST", f"{base_id}/tables", token,
+            json={"name": name, "description": description, "fields": fields})
+        print(f"created table {name} ({len(fields)} fields)")
+        changed += 1
+    if changed:
+        live = fetch_tables(base_id, token)
 
-    # Link fields come last: both endpoints of a link must exist first.
-    # Airtable auto-creates the reverse field on the other table; its default
-    # name doesn't matter, since nothing reads it.
-    tables = api("GET", f"{base_id}/tables", token)["tables"]
-    registry_table = next(t for t in tables if t["name"] == REGISTRY_TABLE)
-    registry_fields = {field["name"] for field in registry_table["fields"]}
+    # 2. Renames, before field creation, so an existing base converges onto
+    #    the current names rather than gaining duplicates beside them.
+    for table_name, renames in RENAMES.items():
+        table = live.get(table_name)
+        if not table:
+            continue
+        by_name = {field["name"]: field for field in table["fields"]}
+        for old, new in renames.items():
+            if old in by_name and new not in by_name:
+                api("PATCH", f"{base_id}/tables/{table['id']}/fields/{by_name[old]['id']}",
+                    token, json={"name": new})
+                print(f"renamed {table_name}.{old} -> {new}")
+                changed += 1
 
-    if "Sources" not in registry_fields:
-        api(
-            "POST",
-            f"{base_id}/tables/{created[REGISTRY_TABLE]}/fields",
-            token,
-            json={
-                "name": "Sources",
-                "type": "multipleRecordLinks",
-                "description": "Evidence for this record. At least one required to publish.",
-                "options": {"linkedTableId": created[SOURCES_TABLE]},
-            },
-        )
-        print(f"- {REGISTRY_TABLE}.Sources: linked to {SOURCES_TABLE}")
-    else:
-        print(f"- {REGISTRY_TABLE}.Sources: already exists, skipping")
+    if changed:
+        live = fetch_tables(base_id, token)
 
-    print(
-        "\nDone.\n\n"
-        f"  AIRTABLE_BASE_ID={base_id}\n\n"
-        "Next: add a record with Published checked, then dry-run the sync:\n"
-        "  python3 scripts/sync_from_airtable.py && python3 scripts/validate.py\n\n"
-        "Then delete the schema.bases:write token you used here — the runtime\n"
-        "sync token should not be able to alter the base structure."
-    )
+    # 3. Missing fields on existing tables.
+    for table_name, _, fields in TABLES:
+        table = live[table_name]
+        present = {field["name"] for field in table["fields"]}
+        for field in fields:
+            if field["name"] in present:
+                continue
+            api("POST", f"{base_id}/tables/{table['id']}/fields", token, json=field)
+            print(f"added {table_name}.{field['name']} ({field['type']})")
+            changed += 1
+
+    # 4. The link field, once both endpoints exist.
+    live = fetch_tables(base_id, token)
+    registry = live[REGISTRY_TABLE]
+    if SOURCES_LINK_FIELD not in {f["name"] for f in registry["fields"]}:
+        api("POST", f"{base_id}/tables/{registry['id']}/fields", token, json={
+            "name": SOURCES_LINK_FIELD,
+            "type": "multipleRecordLinks",
+            "description": f"{REQUIRED_NOTE} Evidence for this record.",
+            "options": {"linkedTableId": live[SOURCES_TABLE]["id"]},
+        })
+        print(f"added {REGISTRY_TABLE}.{SOURCES_LINK_FIELD} (link to {SOURCES_TABLE})")
+        changed += 1
+        live = fetch_tables(base_id, token)
+        registry = live[REGISTRY_TABLE]
+
+    # 5. Formula fields last: they reference the IDs of everything above.
+    present = {field["name"] for field in registry["fields"]}
+    for formula in build_formulas(registry):
+        if formula["name"] in present:
+            continue
+        try:
+            api("POST", f"{base_id}/tables/{registry['id']}/fields", token, json=formula)
+            print(f"added {REGISTRY_TABLE}.{formula['name']} (formula)")
+            changed += 1
+        except requests.HTTPError as error:
+            # Some Airtable plans and API versions refuse formula creation.
+            # Not fatal: everything else is in place, and the field can be
+            # added by hand from the formula printed here.
+            print(f"\ncould not create {formula['name']}: {error}", file=sys.stderr)
+            print(f"add it manually with this formula:\n\n{formula['options']['formula']}\n",
+                  file=sys.stderr)
+
+    print(f"\n{changed} change(s) applied." if changed else "\nBase already matches the definitions.")
+    print(f"  AIRTABLE_BASE_ID={base_id}\n")
+    print("Verify with:  python3 scripts/check_airtable_base.py")
     return 0
 
 
