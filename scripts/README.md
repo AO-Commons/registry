@@ -3,6 +3,7 @@
 | Script | Purpose |
 |---|---|
 | [setup_airtable_base.py](setup_airtable_base.py) | Builds the three tables in an empty base. Run once |
+| [check_airtable_base.py](check_airtable_base.py) | Compares the live base against what the scripts expect. Read-only; worth re-running periodically |
 | [validate.py](validate.py) | Validates records against the schema and checks id/filename/bundle invariants. Runs in CI |
 | [sync_from_airtable.py](sync_from_airtable.py) | Regenerates `data/` from the Airtable base |
 | [intake_to_airtable.py](intake_to_airtable.py) | Forwards issue-form submissions into the Airtable Intake table |
@@ -47,6 +48,14 @@ Intake and registry are **separate tables**. A submission is a claim; a record i
    Delete that token afterwards. The runtime sync token must not be able to alter the base structure — reading and writing records is all it ever needs.
 
    The script is safe to re-run: existing tables are reported and skipped, never overwritten.
+
+   Then confirm the base matches the scripts:
+
+   ```sh
+   python3 scripts/check_airtable_base.py
+   ```
+
+   Re-run that check whenever someone has been editing the base by hand. Renaming a field or retyping a select option doesn't make the sync fail — it makes the sync silently stop populating that field, which is worse.
 
 1. **Create the runtime personal access token.** Scope it to the **registry base only** — never the CRM base — with `data.records:read`, `data.records:write`, and `schema.bases:read`. Set an expiry and a calendar reminder to rotate it.
 2. **Add the secret and variables** to `AO-Commons/registry`. Pipe the token from your clipboard rather than pasting it into a command, so it never lands in shell history:
