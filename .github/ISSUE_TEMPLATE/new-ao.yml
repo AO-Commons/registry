@@ -1,0 +1,149 @@
+name: Add an organization
+description: Submit an autonomous organization for inclusion in the registry — including your own.
+title: "[New AO] "
+labels: ["intake", "new-ao"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for adding to the registry.
+
+        Two things worth knowing before you fill this in:
+
+        - **Self-submissions are welcome.** They're labelled `self-reported`, which is a description of how we verified the record, not a lesser tier of listing.
+        - **We record what sources support, not what's claimed.** If you tell us agents run the treasury, we'll look for the governance document that shows it. Pointing us at that document yourself is the fastest path to an accurate entry.
+
+        Please don't include anyone's personal contact details — the registry tracks organizations, not people.
+
+  - type: input
+    id: name
+    attributes:
+      label: Organization name
+      placeholder: Example Collective
+    validations:
+      required: true
+
+  - type: input
+    id: website
+    attributes:
+      label: Website
+      placeholder: https://example.org
+    validations:
+      required: true
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: What does it do?
+      description: One or two sentences, descriptive rather than promotional. We'll edit for neutrality if needed.
+      placeholder: A research collective in which agents draft and screen grant proposals, with a human committee approving disbursements.
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: agent_roles
+    attributes:
+      label: Which functions do AI agents hold?
+      description: |
+        This is the membership criterion. Agents must hold an organizational *function* — not merely produce content that humans then act on. The line is authority, not tooling.
+      options:
+        - label: Governance — agents vote, propose, or decide policy
+        - label: Treasury — agents allocate, disburse, or manage funds
+        - label: Operations — agents run recurring organizational processes
+        - label: Research — agents produce the organization's research output
+        - label: Development — agents write and ship the organization's code
+        - label: Moderation — agents govern a community or platform
+        - label: External representation — agents speak or negotiate for the organization
+    validations:
+      required: true
+
+  - type: dropdown
+    id: autonomy_level
+    attributes:
+      label: How much authority do agents actually exercise?
+      description: |
+        Pick the level the organization operates at today, not the one it's building toward. If you're unsure, choose "not sure" — we'd rather investigate than publish a guess.
+      options:
+        - "Advisory — agents recommend, humans decide"
+        - "Delegated — agents decide within bounded mandates"
+        - "Supervised-autonomous — agents act independently, humans can veto or review after the fact"
+        - "Autonomous — agents act with no routine human checkpoint"
+        - "Not sure"
+    validations:
+      required: true
+
+  - type: textarea
+    id: human_oversight
+    attributes:
+      label: What keeps humans in control?
+      description: |
+        The specific mechanisms — multisig thresholds, veto rights, review cadence, spending limits, kill switches. Be concrete; "there is human oversight" tells us nothing.
+      placeholder: Disbursements above $5,000 require a 3-of-5 human committee signature. The committee reviews a sample of agent rejections monthly.
+    validations:
+      required: true
+
+  - type: textarea
+    id: sources
+    attributes:
+      label: Sources
+      description: |
+        Links that back up the claims above — governance docs, forum posts, contracts, announcements. **At least one required.** Say which claim each link supports where it isn't obvious. An entry without sources is a rumor and won't be listed.
+      placeholder: |
+        https://example.org/governance — autonomy level and oversight mechanism
+        https://example.org/blog/launch — launch date
+    validations:
+      required: true
+
+  - type: dropdown
+    id: status
+    attributes:
+      label: Operating status
+      options:
+        - "Active — currently operating"
+        - "Announced — publicly announced, not yet operating"
+        - "Dormant — no visible activity for some months"
+        - "Sunset — wound down"
+        - "Not sure"
+    validations:
+      required: true
+
+  - type: input
+    id: launched
+    attributes:
+      label: When did it launch?
+      description: YYYY, YYYY-MM, or YYYY-MM-DD — whatever precision you can source.
+      placeholder: 2025-03
+
+  - type: textarea
+    id: other_links
+    attributes:
+      label: Other links
+      description: Docs, repository, blog, forum, social. One per line.
+
+  - type: textarea
+    id: technical
+    attributes:
+      label: Technical and legal details
+      description: |
+        Optional, and skip anything you don't know. Agent frameworks or models used; legal wrapper (LLC, foundation, nonprofit, none); jurisdiction; chains and governance contract addresses if on-chain.
+
+  - type: dropdown
+    id: relationship
+    attributes:
+      label: Your relationship to this organization
+      description: This sets the record's verification method. It doesn't affect whether the entry is listed.
+      options:
+        - "I work on / with it — this is a self-submission"
+        - "No relationship — I'm submitting it as an observer"
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: confirm
+    attributes:
+      label: Before submitting
+      options:
+        - label: I've included at least one source link.
+          required: true
+        - label: This submission contains no one's personal contact details.
+          required: true

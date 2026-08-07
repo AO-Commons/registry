@@ -1,0 +1,220 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/AO-Commons/registry/schema/ao.schema.json",
+  "title": "Autonomous Organization",
+  "description": "One record in the AO Commons registry. Schema version 0.1 — expect breaking changes until 1.0.",
+  "type": "object",
+  "required": ["id", "name", "summary", "status", "agent_roles", "autonomy_level", "sources", "verification"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "description": "Schema version this record was written against.",
+      "type": "string",
+      "const": "0.1"
+    },
+    "id": {
+      "description": "Stable slug. Must match the filename and never change once published — downstream citations depend on it.",
+      "type": "string",
+      "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+      "minLength": 2,
+      "maxLength": 64
+    },
+    "name": {
+      "description": "The organization's own name for itself.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 120
+    },
+    "aliases": {
+      "description": "Former or alternative names, for searchability.",
+      "type": "array",
+      "items": { "type": "string" },
+      "uniqueItems": true
+    },
+    "summary": {
+      "description": "What the organization does, in one or two neutral sentences. Descriptive, not promotional — no marketing copy.",
+      "type": "string",
+      "minLength": 20,
+      "maxLength": 400
+    },
+    "website": { "type": "string", "format": "uri" },
+    "status": {
+      "description": "Operating state as of the last verification.",
+      "type": "string",
+      "enum": ["announced", "active", "dormant", "sunset", "unknown"]
+    },
+    "launched": {
+      "description": "When the organization began operating, as YYYY or YYYY-MM or YYYY-MM-DD — whatever precision the evidence supports.",
+      "type": "string",
+      "pattern": "^[0-9]{4}(-[0-9]{2}(-[0-9]{2})?)?$"
+    },
+    "categories": {
+      "description": "What the organization does. Multiple values allowed.",
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "enum": [
+          "research",
+          "protocol",
+          "investment",
+          "grantmaking",
+          "media",
+          "services",
+          "infrastructure",
+          "community",
+          "creative",
+          "other"
+        ]
+      }
+    },
+
+    "agent_roles": {
+      "description": "Which organizational functions AI agents hold. The defining dimension of this registry: an organization with no agent roles is not an AO. Use 'none-claimed' only for records under investigation.",
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "enum": [
+          "governance",
+          "treasury",
+          "operations",
+          "research",
+          "development",
+          "moderation",
+          "external-representation",
+          "none-claimed"
+        ]
+      }
+    },
+    "autonomy_level": {
+      "description": "How much authority agents actually exercise. advisory: agents recommend, humans decide. delegated: agents decide within bounded mandates. supervised-autonomous: agents act independently with human veto or review after the fact. autonomous: agents act with no routine human checkpoint. Record what is evidenced, not what is claimed; use 'undetermined' when sources conflict.",
+      "type": "string",
+      "enum": ["advisory", "delegated", "supervised-autonomous", "autonomous", "undetermined"]
+    },
+    "human_oversight": {
+      "description": "How humans retain control in practice: veto rights, multisig thresholds, review cadence, kill switches. Prose, one or two sentences.",
+      "type": "string",
+      "maxLength": 600
+    },
+    "governance_model": {
+      "type": "string",
+      "enum": [
+        "token-voting",
+        "multisig",
+        "board",
+        "foundation",
+        "cooperative",
+        "informal",
+        "agent-consensus",
+        "hybrid",
+        "undisclosed"
+      ]
+    },
+    "agent_stack": {
+      "description": "Frameworks, models, or platforms the organization's agents run on, as publicly documented. Not exhaustive and not an endorsement.",
+      "type": "array",
+      "items": { "type": "string" },
+      "uniqueItems": true
+    },
+
+    "legal_wrapper": {
+      "type": "string",
+      "enum": ["none", "llc", "dao-llc", "foundation", "nonprofit", "cooperative", "trust", "other", "undisclosed"]
+    },
+    "jurisdiction": {
+      "description": "ISO 3166-1 alpha-2 country code, or a subdivision code where it matters (e.g. US-WY).",
+      "type": "string",
+      "pattern": "^[A-Z]{2}(-[A-Z0-9]{1,3})?$"
+    },
+
+    "onchain": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "is_onchain": { "type": "boolean" },
+        "chains": {
+          "type": "array",
+          "items": { "type": "string" },
+          "uniqueItems": true
+        },
+        "contracts": {
+          "description": "Governance or treasury contracts, as chain-prefixed addresses (e.g. 'ethereum:0xabc...').",
+          "type": "array",
+          "items": { "type": "string" },
+          "uniqueItems": true
+        }
+      },
+      "required": ["is_onchain"]
+    },
+
+    "links": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "docs": { "type": "string", "format": "uri" },
+        "repo": { "type": "string", "format": "uri" },
+        "blog": { "type": "string", "format": "uri" },
+        "forum": { "type": "string", "format": "uri" },
+        "x": { "type": "string", "format": "uri" },
+        "discord": { "type": "string", "format": "uri" },
+        "farcaster": { "type": "string", "format": "uri" }
+      }
+    },
+
+    "sources": {
+      "description": "Evidence for the claims in this record. At least one required — an unsourced entry is a rumor, not a registry record.",
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["url", "accessed"],
+        "properties": {
+          "url": { "type": "string", "format": "uri" },
+          "title": { "type": "string" },
+          "accessed": { "type": "string", "format": "date" },
+          "supports": {
+            "description": "Which fields this source is evidence for.",
+            "type": "array",
+            "items": { "type": "string" }
+          }
+        }
+      }
+    },
+
+    "verification": {
+      "description": "How and when this record was last checked. Self-reported records are listed; they are just labelled honestly.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["method", "verified_on"],
+      "properties": {
+        "method": {
+          "type": "string",
+          "enum": ["self-reported", "documented", "interviewed", "observed"]
+        },
+        "verified_on": { "type": "string", "format": "date" },
+        "verified_by": {
+          "description": "Role or handle of the reviewer, not personal contact details.",
+          "type": "string"
+        },
+        "notes": { "type": "string", "maxLength": 600 }
+      }
+    },
+
+    "tags": {
+      "type": "array",
+      "items": { "type": "string", "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$" },
+      "uniqueItems": true
+    },
+    "airtable_record_id": {
+      "description": "Provenance link back to the Airtable base, which is the source of truth for this record.",
+      "type": "string",
+      "pattern": "^rec[A-Za-z0-9]{14}$"
+    },
+    "added": { "type": "string", "format": "date" },
+    "updated": { "type": "string", "format": "date" }
+  }
+}

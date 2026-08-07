@@ -1,0 +1,73 @@
+name: Correct an entry
+description: Report something wrong, outdated, or overstated in an existing registry record.
+title: "[Correction] "
+labels: ["intake", "correction"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Corrections are the most valuable thing you can send us, and corrections to `autonomy_level` most of all — it's the field we're most likely to get wrong in either direction.
+
+        Note that `data/` is generated from Airtable, so a pull request editing it would be overwritten at the next sync. This form is the durable path.
+
+  - type: input
+    id: record_id
+    attributes:
+      label: Record
+      description: The `id` slug, or the filename in `data/aos/`.
+      placeholder: example-collective
+    validations:
+      required: true
+
+  - type: dropdown
+    id: field
+    attributes:
+      label: What's wrong?
+      options:
+        - "autonomy_level — we've overstated or understated how much agents actually decide"
+        - "agent_roles — wrong functions listed"
+        - "human_oversight — the described controls are wrong or out of date"
+        - "status — the organization's operating state has changed"
+        - "summary or basic details"
+        - "links or sources"
+        - "The organization shouldn't be listed at all"
+        - "Something else"
+    validations:
+      required: true
+
+  - type: textarea
+    id: correction
+    attributes:
+      label: What should it say instead?
+      description: What the record currently says, and what's actually the case.
+    validations:
+      required: true
+
+  - type: textarea
+    id: sources
+    attributes:
+      label: Sources
+      description: |
+        Links supporting the correction. **At least one required** — we hold corrections to the same evidentiary standard as original entries, including corrections from the organization itself.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: relationship
+    attributes:
+      label: Your relationship to this organization
+      options:
+        - "I work on / with it"
+        - "No relationship"
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: confirm
+    attributes:
+      label: Before submitting
+      options:
+        - label: I've included at least one source link.
+          required: true
+        - label: This submission contains no one's personal contact details.
+          required: true

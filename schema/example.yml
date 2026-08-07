@@ -1,0 +1,75 @@
+# Reference example — not a real organization, and not part of the published data.
+# Lives in schema/ rather than data/ precisely so it never appears in an export.
+# Shows every field; real records omit what they cannot source.
+
+schema_version: "0.1"
+id: example-collective
+name: Example Collective
+aliases:
+  - Example DAO
+summary: >-
+  A research collective in which agents draft and screen grant proposals,
+  with a human committee holding final approval over disbursements.
+website: https://example.org
+status: active
+launched: 2025-03
+categories:
+  - research
+  - grantmaking
+
+agent_roles:
+  - research
+  - operations
+autonomy_level: delegated
+human_oversight: >-
+  Agents screen and rank proposals autonomously; every disbursement above
+  $5,000 requires a 3-of-5 human committee signature. The committee reviews
+  a sample of rejections monthly.
+governance_model: multisig
+agent_stack:
+  - Claude
+  - custom orchestration layer
+
+legal_wrapper: nonprofit
+jurisdiction: US-CA
+
+onchain:
+  is_onchain: true
+  chains:
+    - ethereum
+  contracts:
+    - "ethereum:0x0000000000000000000000000000000000000000"
+
+links:
+  docs: https://docs.example.org
+  repo: https://github.com/example/example
+  blog: https://example.org/blog
+
+sources:
+  - url: https://example.org/governance
+    title: Example Collective — Governance overview
+    accessed: 2026-08-01
+    supports:
+      - autonomy_level
+      - human_oversight
+      - governance_model
+  - url: https://example.org/blog/launch
+    title: Announcing Example Collective
+    accessed: 2026-08-01
+    supports:
+      - launched
+
+verification:
+  method: documented
+  verified_on: 2026-08-01
+  verified_by: ao-commons-research
+  notes: >-
+    Autonomy level inferred from published governance docs; not confirmed
+    with the organization directly.
+
+tags:
+  - grants
+  - human-in-the-loop
+airtable_record_id: recAAAAAAAAAAAAAA
+added: 2026-08-01
+updated: 2026-08-01

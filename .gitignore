@@ -1,0 +1,9 @@
+.DS_Store
+*.tmp
+~$*
+credentials*
+.env*
+# local sync scratch — the committed data/ is the only published output
+*.airtable-cache.json
+__pycache__/
+.venv/

@@ -1,0 +1,60 @@
+# Forwards submissions from the issue forms into the Airtable intake table.
+#
+# INERT until you set the repository variable INTAKE_ENABLED to 'true' and add
+# the AIRTABLE_TOKEN secret. Until then the issue forms still work — intake is
+# just handled by a human reading the issue.
+#
+# See scripts/README.md for the design and the remaining work.
+
+name: Intake to Airtable
+
+on:
+  issues:
+    types: [opened, edited]
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  forward:
+    if: vars.INTAKE_ENABLED == 'true' && contains(github.event.issue.labels.*.name, 'intake')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install requests
+
+      - name: Create or update the Airtable intake record
+        env:
+          AIRTABLE_TOKEN: ${{ secrets.AIRTABLE_TOKEN }}
+          AIRTABLE_BASE_ID: ${{ vars.AIRTABLE_BASE_ID }}
+          AIRTABLE_INTAKE_TABLE_ID: ${{ vars.AIRTABLE_INTAKE_TABLE_ID }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          ISSUE_TITLE: ${{ github.event.issue.title }}
+          ISSUE_BODY: ${{ github.event.issue.body }}
+          ISSUE_URL: ${{ github.event.issue.html_url }}
+        run: python3 scripts/intake_to_airtable.py # TODO: not yet written
+
+      - name: Acknowledge on the issue
+        uses: actions/github-script@v7
+        with:
+          script: |
+            // Only comment on the first open, not on every edit.
+            if (context.payload.action !== 'opened') return
+            await github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: [
+                "Thanks — this submission is now queued for review.",
+                "",
+                "A maintainer will check the sources and either add the record or come back to you here.",
+                "Once it's published it'll appear in `data/aos/`, which is regenerated from our review database.",
+              ].join("\n"),
+            })
