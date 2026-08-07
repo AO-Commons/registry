@@ -11,4 +11,4 @@ To fix a record, [open a correction issue](../../../issues/new?template=correcti
 
 Records validate against [../schema/ao.schema.json](../schema/ao.schema.json) — see [../schema/README.md](../schema/README.md) for what the fields mean and how to read `autonomy_level` in particular.
 
-> **Empty for now.** The schema, intake forms, and validation are in place; the Airtable sync is not yet wired up. Records are being collected in the base. See [../scripts/README.md](../scripts/README.md).
+> **Empty for now.** The sync scripts are written but not yet switched on — they're waiting on the Airtable base and credentials. See [../scripts/README.md](../scripts/README.md).

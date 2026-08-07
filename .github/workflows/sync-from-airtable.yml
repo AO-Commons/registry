@@ -4,7 +4,7 @@
 # the AIRTABLE_TOKEN secret. The gate is deliberate: a half-configured sync
 # that writes empty files is worse than one that doesn't run.
 #
-# See scripts/README.md for the design and the remaining work.
+# See scripts/README.md for the setup steps.
 
 name: Sync from Airtable
 
@@ -36,7 +36,7 @@ jobs:
           AIRTABLE_TOKEN: ${{ secrets.AIRTABLE_TOKEN }}
           AIRTABLE_BASE_ID: ${{ vars.AIRTABLE_BASE_ID }}
           AIRTABLE_TABLE_ID: ${{ vars.AIRTABLE_TABLE_ID }}
-        run: python3 scripts/sync_from_airtable.py # TODO: not yet written
+        run: python3 scripts/sync_from_airtable.py
 
       - name: Validate the regenerated data
         run: python3 scripts/validate.py

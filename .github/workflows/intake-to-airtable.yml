@@ -4,7 +4,7 @@
 # the AIRTABLE_TOKEN secret. Until then the issue forms still work — intake is
 # just handled by a human reading the issue.
 #
-# See scripts/README.md for the design and the remaining work.
+# See scripts/README.md for the setup steps.
 
 name: Intake to Airtable
 
@@ -39,7 +39,7 @@ jobs:
           ISSUE_TITLE: ${{ github.event.issue.title }}
           ISSUE_BODY: ${{ github.event.issue.body }}
           ISSUE_URL: ${{ github.event.issue.html_url }}
-        run: python3 scripts/intake_to_airtable.py # TODO: not yet written
+        run: python3 scripts/intake_to_airtable.py
 
       - name: Acknowledge on the issue
         uses: actions/github-script@v7

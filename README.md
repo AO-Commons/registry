@@ -44,7 +44,7 @@ Pull requests editing `data/` will not be merged — a sync would overwrite them
 
 Every record links back to its Airtable record via `airtable_record_id`, so any published row can be traced to its origin.
 
-> **Status: the sync is not yet wired up.** The schema, intake forms, and validation are in place; the Airtable connection is the next piece of work. Until then, `data/` is empty and records are being collected in the base. See [scripts/README.md](scripts/README.md) for the design.
+> **Status: the sync is written but not yet switched on.** Schema, intake forms, validation, and both sync scripts are in place; they're waiting on the Airtable base and credentials. Until then `data/` is empty. See [scripts/README.md](scripts/README.md).
 
 ## Companion repository
 

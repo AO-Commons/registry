@@ -1,12 +1,15 @@
 # scripts/
 
-| Script | Status | Purpose |
-|---|---|---|
-| [validate.py](validate.py) | working | Validates records against the schema and checks id/filename/bundle invariants. Runs in CI on every PR |
-| `sync_from_airtable.py` | **not written** | Regenerates `data/` from the Airtable base |
-| `intake_to_airtable.py` | **not written** | Forwards issue-form submissions into the Airtable intake table |
+| Script | Purpose |
+|---|---|
+| [validate.py](validate.py) | Validates records against the schema and checks id/filename/bundle invariants. Runs in CI on every PR |
+| [sync_from_airtable.py](sync_from_airtable.py) | Regenerates `data/` from the Airtable base |
+| [intake_to_airtable.py](intake_to_airtable.py) | Forwards issue-form submissions into the Airtable Intake table |
+| [airtable_fields.py](airtable_fields.py) | The Airtable-field ↔ schema-key mapping both Airtable scripts import |
 
-The two Airtable scripts have workflows waiting for them ([sync-from-airtable.yml](../.github/workflows/sync-from-airtable.yml), [intake-to-airtable.yml](../.github/workflows/intake-to-airtable.yml)), both gated off by repository variables so nothing runs half-configured.
+All four are written and tested. Their workflows ([sync-from-airtable.yml](../.github/workflows/sync-from-airtable.yml), [intake-to-airtable.yml](../.github/workflows/intake-to-airtable.yml)) are gated off by repository variables until the base and credentials exist, so nothing runs half-configured.
+
+[airtable_fields.py](airtable_fields.py) is the seam where the two sides have to agree — **a field renamed in Airtable is a change there**, and nowhere else.
 
 ## The data flow
 
@@ -26,27 +29,47 @@ Airtable is the source of truth. `data/` is generated output, and pull requests 
 
 Intake and registry are **separate tables**. A submission is a claim; a record is a verified claim. Keeping them apart means an unreviewed submission can never appear in published data because someone flipped a status field by accident.
 
-## To finish the sync
+## Turning it on
 
-1. **Build the Airtable base.** Fields must cover everything in [../schema/ao.schema.json](../schema/ao.schema.json) — a field that doesn't exist in the base can never be populated in the data. Airtable's multi-select options must match the schema enums exactly, or the sync becomes a translation layer nobody wants to maintain.
-2. **Write `sync_from_airtable.py`.** Read the Registry table where a `Published` checkbox is true, map fields to schema keys, write one YAML per record named `<id>.yml`, and write `data/registry.json` as `{"generated": "<date>", "schema_version": "0.1", "organizations": [...]}`. Delete YAML files whose records are no longer published — but see the safety note below. Write deterministically: stable key order, stable list order, no timestamps inside individual records, or every run produces a diff.
-3. **Write `intake_to_airtable.py`.** Parse the issue body (GitHub issue forms render as predictable `### Heading` sections), create an Intake record, and store the issue number so an edited issue updates its record instead of creating a second one.
-4. **Set the repository variables and secret**, then flip `SYNC_ENABLED` / `INTAKE_ENABLED` to `true`:
+1. **Create the Airtable personal access token.** Scope it to the **registry base only** — never the CRM base — with `data.records:read`, `data.records:write`, and `schema.bases:read`. Set an expiry and a calendar reminder to rotate it.
+2. **Add the secret and variables** to `AO-Commons/registry`. Pipe the token from your clipboard rather than pasting it into a command, so it never lands in shell history:
+
+   ```sh
+   pbpaste | gh secret set AIRTABLE_TOKEN --repo AO-Commons/registry --app actions
+   gh variable set AIRTABLE_BASE_ID --repo AO-Commons/registry --body "app..."
+   ```
+
+3. **Flip the gates** once you've confirmed a manual run works:
+
+   ```sh
+   gh variable set SYNC_ENABLED   --repo AO-Commons/registry --body true
+   gh variable set INTAKE_ENABLED --repo AO-Commons/registry --body true
+   ```
 
    | Name | Kind | Value |
    |---|---|---|
-   | `AIRTABLE_TOKEN` | secret | Personal access token, scoped to the registry base only — never the CRM base |
+   | `AIRTABLE_TOKEN` | secret | PAT scoped to the registry base only |
    | `AIRTABLE_BASE_ID` | variable | `app...` |
-   | `AIRTABLE_TABLE_ID` | variable | Registry table |
-   | `AIRTABLE_INTAKE_TABLE_ID` | variable | Intake table |
    | `SYNC_ENABLED` | variable | `true` |
    | `INTAKE_ENABLED` | variable | `true` |
 
-## Two things to get right
+   Table names are constants in [airtable_fields.py](airtable_fields.py) rather than variables — they're part of the schema contract, not deployment configuration.
 
-**Scope the token to the registry base only.** A token with workspace-wide access sitting in a *public* repository's Actions secrets is one workflow-injection bug away from reading the CRM. The blast radius should be data that is already public.
+4. **Dry-run the sync locally first**, against a base with one or two records, before letting the schedule touch `main`:
 
-**Make deletion safe.** The sync opens a pull request rather than pushing to `main`, so a bad run is reviewable rather than published. Beyond that, have the script refuse to proceed if it would remove more than a small fraction of existing records — an Airtable filter typo or an API returning an empty page should not silently empty the registry.
+   ```sh
+   export AIRTABLE_TOKEN=...   # from your password manager, not a committed file
+   export AIRTABLE_BASE_ID=app...
+   python3 scripts/sync_from_airtable.py && python3 scripts/validate.py
+   ```
+
+## Two things this gets right, deliberately
+
+**The token is scoped to the registry base only.** A workspace-wide token sitting in a *public* repository's Actions secrets is one workflow-injection bug away from reading the CRM. The blast radius should be data that is already public.
+
+**Deletion is guarded.** The sync opens a pull request rather than pushing to `main`, so a bad run is reviewable rather than published. On top of that, `sync_from_airtable.py` refuses to run if it would remove more than a quarter of existing records — an Airtable filter typo or an API page returning empty should not silently empty the registry. Override with `SYNC_ALLOW_DELETIONS=1` once you've confirmed the removal is intended.
+
+A record that fails schema validation is skipped and named in the run summary rather than written, so one malformed row doesn't block every other update — but the skip is always visible, never silent.
 
 ## Why not bidirectional
 
