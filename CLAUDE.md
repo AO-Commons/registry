@@ -12,7 +12,9 @@ Everything outside `data/` — schema, documentation, issue forms, workflows, sc
 
 ## What this registry tracks
 
-Autonomous organizations: organizations in which AI agents hold meaningful operational or governance roles alongside humans. The membership criterion is *authority*, not tooling. Agents holding an organizational function (governance, treasury, operations, research, development, moderation, external representation) qualify; an organization that merely uses models to produce content does not.
+Autonomous organizations: organizations in which AI agents hold meaningful leadership, operational, or governance roles, alongside humans or fully autonomously. The membership criterion is *authority*, not tooling. Agents holding an organizational function (leadership, governance, treasury, operations, research, development, moderation, external representation) qualify; an organization that merely uses models to produce content does not.
+
+Note that an AO need not have humans in it. Where an organization genuinely runs with no routine human checkpoint, `human_oversight` should say so explicitly rather than being left empty — an absent value reads as "not yet researched", which is a different claim.
 
 ## Evidentiary standards
 

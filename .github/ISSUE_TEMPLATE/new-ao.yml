@@ -47,6 +47,7 @@ body:
       description: |
         This is the membership criterion. Agents must hold an organizational *function* — not merely produce content that humans then act on. The line is authority, not tooling.
       options:
+        - label: Leadership — agents set direction or hold executive authority
         - label: Governance — agents vote, propose, or decide policy
         - label: Treasury — agents allocate, disburse, or manage funds
         - label: Operations — agents run recurring organizational processes
@@ -78,6 +79,8 @@ body:
       label: What keeps humans in control?
       description: |
         The specific mechanisms — multisig thresholds, veto rights, review cadence, spending limits, kill switches. Be concrete; "there is human oversight" tells us nothing.
+
+        If the organization operates with no routine human checkpoint, say so plainly. "None" is a real answer here and we'd rather record it than leave the field vague.
       placeholder: Disbursements above $5,000 require a 3-of-5 human committee signature. The committee reviews a sample of agent rejections monthly.
     validations:
       required: true

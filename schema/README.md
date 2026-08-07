@@ -17,6 +17,8 @@ Most of the schema is bookkeeping. Four fields are the reason the registry exist
 
 **`human_oversight`** — the prose counterpart to `autonomy_level`: the specific mechanisms (thresholds, vetoes, review cadence, kill switches) that make the level a fact rather than an adjective. If this field is hard to write, the `autonomy_level` is probably not yet known.
 
+An AO need not have humans in it, so "none" is a legitimate value — but write it explicitly. Omitting the field reads as "not yet researched", which is a materially different claim from "we looked, and there is no human checkpoint."
+
 **`sources`** — at least one, required. An unsourced entry is a rumor. `supports` names which fields each source is evidence for, which is what makes a claim auditable by a reader who doubts it.
 
 ## Self-reported records

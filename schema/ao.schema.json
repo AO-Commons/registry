@@ -78,6 +78,7 @@
       "items": {
         "type": "string",
         "enum": [
+          "leadership",
           "governance",
           "treasury",
           "operations",
@@ -95,7 +96,7 @@
       "enum": ["advisory", "delegated", "supervised-autonomous", "autonomous", "undetermined"]
     },
     "human_oversight": {
-      "description": "How humans retain control in practice: veto rights, multisig thresholds, review cadence, kill switches. Prose, one or two sentences.",
+      "description": "How humans retain control in practice: veto rights, multisig thresholds, review cadence, kill switches. Prose, one or two sentences. For a genuinely autonomous organization the honest answer is that there is none — state that explicitly rather than omitting the field, since an absent value reads as 'not yet researched'.",
       "type": "string",
       "maxLength": 600
     },
