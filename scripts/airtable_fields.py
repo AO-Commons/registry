@@ -14,6 +14,28 @@ them cannot be published. The marker is part of the field name, so it shows
 up in the Airtable UI without anyone having to consult documentation.
 """
 
+import yaml
+
+
+class RegistryLoader(yaml.SafeLoader):
+    """SafeLoader that leaves dates as strings.
+
+    The schema validates ISO-8601 date *strings*; PyYAML would otherwise
+    resolve unquoted `2026-08-01` to a datetime.date and every date field
+    would fail its type check. Dropping the timestamp resolver keeps records
+    readable — no quoting every date by hand.
+
+    Shared by every script that reads generated records, so they cannot
+    disagree about what a date is.
+    """
+
+
+RegistryLoader.yaml_implicit_resolvers = {
+    prefix: [(tag, regexp) for tag, regexp in resolvers if tag != "tag:yaml.org,2002:timestamp"]
+    for prefix, resolvers in RegistryLoader.yaml_implicit_resolvers.items()
+}
+
+
 REGISTRY_TABLE = "Registry"
 SOURCES_TABLE = "Sources"
 INTAKE_TABLE = "Intake"

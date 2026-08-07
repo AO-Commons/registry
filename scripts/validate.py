@@ -17,27 +17,14 @@ from pathlib import Path
 import yaml
 from jsonschema import Draft202012Validator, FormatChecker
 
+from airtable_fields import RegistryLoader
+
 ROOT = Path(__file__).resolve().parent.parent
 SCHEMA_PATH = ROOT / "schema" / "ao.schema.json"
 EXAMPLE_PATH = ROOT / "schema" / "example.yml"
 DATA_DIR = ROOT / "data" / "aos"
 BUNDLE_PATH = ROOT / "data" / "registry.json"
 
-
-class RegistryLoader(yaml.SafeLoader):
-    """SafeLoader that leaves dates as strings.
-
-    The schema validates ISO-8601 date *strings*; PyYAML would otherwise
-    resolve unquoted `2026-08-01` to a datetime.date and every date field
-    would fail its type check. Dropping the timestamp resolver keeps records
-    readable — no quoting every date by hand.
-    """
-
-
-RegistryLoader.yaml_implicit_resolvers = {
-    prefix: [(tag, regexp) for tag, regexp in resolvers if tag != "tag:yaml.org,2002:timestamp"]
-    for prefix, resolvers in RegistryLoader.yaml_implicit_resolvers.items()
-}
 
 errors: list[str] = []
 

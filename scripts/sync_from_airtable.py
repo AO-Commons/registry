@@ -33,6 +33,7 @@ from airtable_fields import (
     ONCHAIN_LIST_FIELDS,
     PUBLISHED_FIELD,
     REGISTRY_TABLE,
+    RegistryLoader,
     SCHEMA_VERSION,
     SIMPLE_FIELDS,
     SOURCE_FIELDS,
@@ -153,6 +154,23 @@ def build_record(row: dict, sources_by_id: dict[str, dict]) -> dict:
     return {key: record[key] for key in KEY_ORDER if key in record}
 
 
+def published_slugs() -> dict[str, str]:
+    """Airtable record ID -> the slug it was last published under.
+
+    A record keeps its Airtable ID forever but its slug is a promise to
+    readers, so this is what lets the sync notice the two coming apart.
+    """
+    previous: dict[str, str] = {}
+    for path in DATA_DIR.glob("*.yml"):
+        try:
+            record = yaml.load(path.read_text(), Loader=RegistryLoader)
+        except yaml.YAMLError:
+            continue
+        if isinstance(record, dict) and record.get("airtable_record_id"):
+            previous[record["airtable_record_id"]] = record.get("id")
+    return previous
+
+
 def write_yaml(path: Path, record: dict) -> None:
     path.write_text(
         yaml.safe_dump(
@@ -206,6 +224,32 @@ def main() -> int:
         report(f"\nSkipped {len(skipped)} record(s) — these will not appear in the registry:")
         for line in skipped:
             report(f"  - {line}")
+
+    # A slug that changes breaks every citation and link pointing at the old
+    # one. With ID derived from the organization's name, an ordinary typo fix
+    # can trigger this, so it stops the run rather than quietly republishing
+    # the record at a new address.
+    previous = published_slugs()
+    renamed = [
+        (previous[record["airtable_record_id"]], record_id)
+        for record_id, record in sorted(valid.items())
+        if previous.get(record.get("airtable_record_id")) not in (None, record_id)
+    ]
+    if renamed and os.environ.get("SYNC_ALLOW_SLUG_CHANGES") != "1":
+        print(
+            "\nRefusing to sync: %d record(s) would change slug.\n%s\n"
+            "The slug is the published filename and the citation key. Changing it\n"
+            "breaks existing links, and readers get a 404 rather than a redirect.\n"
+            "Prefer restoring the original slug and recording the new name under\n"
+            "Aliases. If the rename is genuinely intended, re-run with\n"
+            "SYNC_ALLOW_SLUG_CHANGES=1."
+            % (
+                len(renamed),
+                "\n".join(f"  {old} -> {new}" for old, new in renamed),
+            ),
+            file=sys.stderr,
+        )
+        return 1
 
     existing = {path.stem for path in DATA_DIR.glob("*.yml")}
     removed = existing - set(valid)

@@ -112,6 +112,8 @@ This automation is defence in depth rather than the primary guard — the sync a
 
 **Deletion is guarded.** The sync opens a pull request rather than pushing to `main`, so a bad run is reviewable rather than published. On top of that, `sync_from_airtable.py` refuses to run if it would remove more than a quarter of existing records — an Airtable filter typo or an API page returning empty should not silently empty the registry. Override with `SYNC_ALLOW_DELETIONS=1` once you've confirmed the removal is intended.
 
+**Slug changes are guarded.** A record's `id` is its published filename and its citation key. If `ID *` is computed from the organization's name, an ordinary typo fix in the name silently moves the record to a new address and 404s every existing link. The sync tracks which slug each Airtable record was last published under and stops the run if any has moved, naming the old and new values. Usually the right fix is to restore the original slug and record the new name under `Aliases` — that field exists precisely so a rename doesn't propagate. Override with `SYNC_ALLOW_SLUG_CHANGES=1` when the move is genuinely intended.
+
 A record that fails schema validation is skipped and named in the run summary rather than written, so one malformed row doesn't block every other update — but the skip is always visible, never silent.
 
 ## Why not bidirectional
