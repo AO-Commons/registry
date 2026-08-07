@@ -42,16 +42,26 @@ def parse_issue_form(body: str) -> dict[str, str]:
     return sections
 
 
+def to_enum_token(label: str) -> str:
+    """Normalize a form label to the schema's spelling.
+
+    "External representation — agents speak for the org" -> "external-representation".
+    Reviewers copy these straight into the Registry table's select fields, so
+    emitting the schema token rather than the prose label saves a translation
+    step and the transcription errors that come with it.
+    """
+    return label.split("—")[0].strip().lower().replace(" ", "-")
+
+
 def checked_options(response: str) -> list[str]:
     """Pull the ticked boxes out of a checkbox section.
 
     Renders as `- [X] Governance — agents vote, propose, or decide policy`.
-    We keep the label before the em dash, which is the schema-facing value.
     """
     options = []
     for line in response.splitlines():
         if match := re.match(r"^\s*-\s*\[[xX]\]\s*(.+?)\s*$", line):
-            options.append(match.group(1).split("—")[0].strip())
+            options.append(to_enum_token(match.group(1)))
     return options
 
 
@@ -115,7 +125,7 @@ def main() -> int:
         fields["Agent Roles Claimed"] = ", ".join(checked_options(roles))
     if autonomy := sections.get("How much authority do agents actually exercise?"):
         # Store the schema-facing token, not the explanatory sentence.
-        fields["Autonomy Claimed"] = autonomy.split("—")[0].strip()
+        fields["Autonomy Claimed"] = to_enum_token(autonomy)
     if relationship := sections.get("Your relationship to this organization"):
         fields["Self Submission"] = relationship.lower().startswith("i work")
 

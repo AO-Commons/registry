@@ -2,14 +2,19 @@
 
 | Script | Purpose |
 |---|---|
-| [validate.py](validate.py) | Validates records against the schema and checks id/filename/bundle invariants. Runs in CI on every PR |
+| [setup_airtable_base.py](setup_airtable_base.py) | Builds the three tables in an empty base. Run once |
+| [validate.py](validate.py) | Validates records against the schema and checks id/filename/bundle invariants. Runs in CI |
 | [sync_from_airtable.py](sync_from_airtable.py) | Regenerates `data/` from the Airtable base |
 | [intake_to_airtable.py](intake_to_airtable.py) | Forwards issue-form submissions into the Airtable Intake table |
-| [airtable_fields.py](airtable_fields.py) | The Airtable-field ↔ schema-key mapping both Airtable scripts import |
+| [airtable_fields.py](airtable_fields.py) | The Airtable-field ↔ schema-key mapping the other scripts import |
 
-All four are written and tested. Their workflows ([sync-from-airtable.yml](../.github/workflows/sync-from-airtable.yml), [intake-to-airtable.yml](../.github/workflows/intake-to-airtable.yml)) are gated off by repository variables until the base and credentials exist, so nothing runs half-configured.
+The sync workflows ([sync-from-airtable.yml](../.github/workflows/sync-from-airtable.yml), [intake-to-airtable.yml](../.github/workflows/intake-to-airtable.yml)) are gated off by repository variables until the base and credentials exist, so nothing runs half-configured.
 
-[airtable_fields.py](airtable_fields.py) is the seam where the two sides have to agree — **a field renamed in Airtable is a change there**, and nowhere else.
+**The base structure is code, not clicks.** [setup_airtable_base.py](setup_airtable_base.py) derives every select field's options from [../schema/ao.schema.json](../schema/ao.schema.json) at runtime, so the Airtable vocabulary cannot drift from the schema enums — not "be compatible with" them, *equal* them. Anything less turns the sync into a translation layer, and translation layers rot.
+
+[airtable_fields.py](airtable_fields.py) is the other half of that seam: **a field renamed in Airtable is a change there**, and nowhere else.
+
+[../tests/test_mapping.py](../tests/test_mapping.py) runs in CI and checks the whole seam holds — that select options equal schema enums, that every field the scripts read or write exists in the base definition, and that every option the intake form offers is a value the schema accepts. These are the failures that don't raise errors when they happen; they just produce records that quietly say the wrong thing.
 
 ## The data flow
 
@@ -31,7 +36,19 @@ Intake and registry are **separate tables**. A submission is a claim; a record i
 
 ## Turning it on
 
-1. **Create the Airtable personal access token.** Scope it to the **registry base only** — never the CRM base — with `data.records:read`, `data.records:write`, and `schema.bases:read`. Set an expiry and a calendar reminder to rotate it.
+0. **Build the base.** Create an empty Airtable base, then run the setup script against it with a **temporary** token carrying `schema.bases:write`:
+
+   ```sh
+   export AIRTABLE_TOKEN=...        # temporary, schema.bases:write
+   export AIRTABLE_BASE_ID=app...   # from the base URL
+   python3 scripts/setup_airtable_base.py
+   ```
+
+   Delete that token afterwards. The runtime sync token must not be able to alter the base structure — reading and writing records is all it ever needs.
+
+   The script is safe to re-run: existing tables are reported and skipped, never overwritten.
+
+1. **Create the runtime personal access token.** Scope it to the **registry base only** — never the CRM base — with `data.records:read`, `data.records:write`, and `schema.bases:read`. Set an expiry and a calendar reminder to rotate it.
 2. **Add the secret and variables** to `AO-Commons/registry`. Pipe the token from your clipboard rather than pasting it into a command, so it never lands in shell history:
 
    ```sh

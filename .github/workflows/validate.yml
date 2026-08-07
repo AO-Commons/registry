@@ -20,7 +20,13 @@ jobs:
           python-version: "3.12"
 
       - name: Install dependencies
-        run: pip install jsonschema pyyaml
+        run: pip install jsonschema pyyaml requests
 
       - name: Validate records against schema
         run: python3 scripts/validate.py
+
+      # Catches drift between the schema, the Airtable base definition, and
+      # the sync scripts — the failures that otherwise surface as records
+      # that quietly say the wrong thing.
+      - name: Check schema / Airtable / script alignment
+        run: python3 tests/test_mapping.py
