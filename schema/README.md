@@ -3,20 +3,7 @@
 | File | Purpose |
 |---|---|
 | [ao.schema.json](ao.schema.json) | Schema (draft 2020-12) for `data/aos/` — autonomous organizations |
-| [tool.schema.json](tool.schema.json) | Schema for `data/tools/` — software AOs are built on or run with |
-| [example.yml](example.yml) · [example-tool.yml](example-tool.yml) | Fully populated reference records. Not real, and deliberately outside `data/` so they never land in an export |
 
-## Two collections, and why they don't merge
-
-A tool is not an autonomous organization, however many agents it hosts. An orchestration platform running a hundred agents is a tool; the company using it to let agents allocate its budget is an AO. The line is the same one the registry draws everywhere — authority, not tooling.
-
-Merging them would be easy and would quietly destroy the thing that makes the registry citable: the claim that everything listed in `data/aos/` meets a specific membership criterion. So the schemas are separate and share no required fields beyond identity and evidence. A tool has no `autonomy_level`; an organization has no `license`. A test asserts they stay distinct.
-
-They cross-reference instead: a tool's `used_by` lists the organizations known to run on it, which is the question worth asking of both collections at once — what are AOs actually built on?
-
-Below describes the AO schema. The tooling schema follows the same conventions; its two fields that carry weight are `agent_model` (what shape of organization the tool makes possible) and `human_controls` (the oversight primitives it actually ships, where "none" is a finding rather than a gap).
-
-**Version 0.1.** Expect breaking changes before 1.0. Every record carries `schema_version`, so a migration can find what needs updating.
 
 ## The fields that carry the weight
 

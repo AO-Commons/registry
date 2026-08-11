@@ -2,7 +2,7 @@ blank_issues_enabled: true
 contact_links:
   - name: Schema change or tooling issue
     url: https://github.com/AO-Commons/registry/issues/new
-    about: For anything about the schema, docs, or workflows, open a blank issue — the forms above are for registry data.
+    about: For anything about the schema, docs, or workflows, open a blank issue — the form above is for registry data.
   - name: Research questions and corrections to memos
     url: https://github.com/AO-Commons/research/issues
     about: Findings and analyses live in the research repository.

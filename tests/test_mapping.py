@@ -35,7 +35,6 @@ SCHEMAS = {
     for spec in AF.COLLECTIONS
 }
 AO = SCHEMAS["registry"]
-TOOL = SCHEMAS["tooling"]
 
 TABLE_FIELDS = {name: fields for name, _, fields in setup.TABLES}
 
@@ -55,25 +54,6 @@ def field_options(fields: list[dict], name: str) -> list[str]:
     raise AssertionError(f"no field named {name!r}")
 
 
-# --- The two collections must stay distinct --------------------------------
-# A tool is not an autonomous organization however many agents it hosts.
-# If the schemas ever converge, the registry's membership criterion — the
-# thing that makes it worth citing — has quietly dissolved.
-
-ao_only = set(AO["properties"]) - set(TOOL["properties"])
-tool_only = set(TOOL["properties"]) - set(AO["properties"])
-assert "autonomy_level" in ao_only and "agent_roles" in ao_only, (
-    "the AO schema must keep the fields that define organizational authority"
-)
-assert "license" in tool_only and "agent_model" in tool_only, (
-    "the tooling schema must keep the fields that describe software"
-)
-assert AF.REGISTRY.table != AF.TOOLING.table
-assert AF.REGISTRY.data_dir != AF.TOOLING.data_dir
-assert AF.REGISTRY.bundle != AF.TOOLING.bundle
-check(f"AO and tooling schemas stay distinct ({len(ao_only)} vs {len(tool_only)} unique fields)")
-
-
 # --- The Airtable vocabulary must equal the schema vocabulary ---------------
 # Not "be compatible with" — equal. Anything else makes the sync a translation
 # layer, and translation layers rot.
@@ -88,28 +68,20 @@ ENUM_FIELDS = {
         "Legal Wrapper": AO["properties"]["legal_wrapper"]["enum"],
         "Verification Method *": AO["properties"]["verification"]["properties"]["method"]["enum"],
     },
-    AF.TOOLING.table: {
-        "Status *": TOOL["properties"]["status"]["enum"],
-        "Categories *": TOOL["properties"]["categories"]["items"]["enum"],
-        "Open Source": TOOL["properties"]["open_source"]["enum"],
-        "Self Hostable": TOOL["properties"]["self_hostable"]["enum"],
-        "Model Agnostic": TOOL["properties"]["model_agnostic"]["enum"],
-        "Verification Method *": TOOL["properties"]["verification"]["properties"]["method"]["enum"],
-    },
 }
 count = 0
 for table, fields in ENUM_FIELDS.items():
     for name, expected in fields.items():
         assert field_options(TABLE_FIELDS[table], name) == expected, f"{table}.{name} drifted"
         count += 1
-check(f"Airtable select options equal schema enums ({count} fields across 2 tables)")
+check(f"Airtable select options equal schema enums ({count} fields)")
 
 for table in ENUM_FIELDS:
     states = set(field_options(TABLE_FIELDS[table], "Review State"))
     status = set(field_options(TABLE_FIELDS[table], "Status *"))
     assert not (states & status), f"{table}: Review State overlaps Status"
 assert "Review State" in AF.INTERNAL_ONLY, "Review State must never be published"
-check("Review State is internal-only and shares no values with Status, in both tables")
+check("Review State is internal-only and shares no values with Status")
 
 
 # --- The `*` marker must mean exactly "the schema requires this" -----------
@@ -123,7 +95,7 @@ for spec in AF.COLLECTIONS:
         f"{spec.table}: starred fields and schema-required keys disagree — "
         f"starred-only {starred - required}, required-only {required - starred}"
     )
-check("every `*` field maps to a schema-required key and vice versa, in both collections")
+check("every `*` field maps to a schema-required key and vice versa")
 
 
 # --- Every field a script reads or writes must exist in the base ------------
@@ -132,7 +104,7 @@ for spec in AF.COLLECTIONS:
     defined = {f["name"] for f in TABLE_FIELDS[spec.table]} | {AF.SOURCES_LINK_FIELD}
     missing = spec.airtable_field_names() - defined
     assert not missing, f"{spec.table}: sync reads absent fields {missing}"
-check("every field the sync reads exists in the base, in both collections")
+check("every field the sync reads exists in the base")
 
 source_names = {f["name"] for f in TABLE_FIELDS[AF.SOURCES_TABLE]}
 assert not ((set(AF.SOURCE_FIELDS) | {AF.SUPPORTS_FIELD}) - source_names)
@@ -156,7 +128,7 @@ for table, checks in setup.BLOCKERS.items():
     assert {name for name, _, _ in checks} == starred, (
         f"{table}: Publish Blockers checks {[n for n, _, _ in checks]}, starred are {sorted(starred)}"
     )
-check("Publish Blockers checks exactly the starred fields, in both tables")
+check("Publish Blockers checks exactly the starred fields")
 
 
 # --- The intake form must not offer options the schema rejects --------------
@@ -179,19 +151,6 @@ form_autonomy = {
 assert form_autonomy <= set(AO["properties"]["autonomy_level"]["enum"])
 check(f"every intake-form autonomy level is a valid schema value ({len(form_autonomy)})")
 
-tool_form_path = ROOT / ".github" / "ISSUE_TEMPLATE" / "new-tool.yml"
-if tool_form_path.exists():
-    tool_form = yaml.safe_load(tool_form_path.read_text())
-    tool_cats = {
-        to_enum_token(option["label"])
-        for block in tool_form["body"] if block.get("id") == "categories"
-        for option in block["attributes"]["options"]
-    }
-    assert tool_cats <= set(TOOL["properties"]["categories"]["items"]["enum"]), (
-        f"tool form offers categories the schema rejects: "
-        f"{tool_cats - set(TOOL['properties']['categories']['items']['enum'])}"
-    )
-    check(f"every tool-form category is a valid schema value ({len(tool_cats)})")
 
 
 # --- Parsing a rendered issue form ------------------------------------------
@@ -256,25 +215,8 @@ AO_ROW = {"id": "recAAAAAAAAAAAAAA", "fields": {
     AF.SOURCES_LINK_FIELD: ["recS2", "recS1"],
 }}
 
-TOOL_ROW = {"id": "recCCCCCCCCCCCCCC", "fields": {
-    "ID *": "example-orchestrator", "Name *": "Example Orchestrator",
-    "Summary *": "An open-source server for running teams of AI agents against assigned work.",
-    "Website": "https://example.dev", "Status *": "active", "Launched": "2025-11",
-    "Categories *": ["orchestration", "observability"],
-    "Agent Model": "Agents are managed workers; a human assigns goals.",
-    "Human Controls": "Per-agent spending caps and an approval step.",
-    "Maintainer": "Example Labs", "Open Source": "yes", "License": "Apache-2.0",
-    "Self Hostable": "yes", "Model Agnostic": "yes",
-    "Languages": "TypeScript", "Protocols": "mcp",
-    "Used By": "example-collective",
-    "Link: Repo": "https://github.com/example/orchestrator",
-    "Verification Method *": "documented", "Verified On *": "2026-08-07",
-    "Tags": "agent-management", "Published": True,
-    "Notes": "INTERNAL REVIEWER NOTE — must never be published",
-    AF.SOURCES_LINK_FIELD: ["recS1"],
-}}
 
-for spec, row in ((AF.REGISTRY, AO_ROW), (AF.TOOLING, TOOL_ROW)):
+for spec, row in ((AF.REGISTRY, AO_ROW),):
     validator = Draft202012Validator(SCHEMAS[spec.key], format_checker=FormatChecker())
     record = build_record(row, SOURCES, spec)
     problems = sorted(validator.iter_errors(record), key=lambda e: list(e.path))
@@ -283,7 +225,7 @@ for spec, row in ((AF.REGISTRY, AO_ROW), (AF.TOOLING, TOOL_ROW)):
     )
     assert "INTERNAL REVIEWER NOTE" not in json.dumps(record), f"{spec.table}: internal note leaked"
     assert list(record)[:2] == ["schema_version", "id"], f"{spec.table}: key order not fixed"
-check("both collections produce schema-valid records with internal fields excluded")
+check("records are schema-valid with internal fields excluded")
 
 ao_record = build_record(AO_ROW, SOURCES, AF.REGISTRY)
 assert ao_record["aliases"] == ["Example DAO", "ExCo"]
@@ -303,19 +245,14 @@ unchecked = build_record(
 assert unchecked["onchain"] == {"is_onchain": False}, "unchecked means not-onchain, not unknown"
 check("an unchecked on-chain box means 'not on-chain', not 'unknown'")
 
-# Tooling has no on-chain concept; the shared builder must not invent one.
-tool_record = build_record(TOOL_ROW, SOURCES, AF.TOOLING)
-assert "onchain" not in tool_record, "tooling records must not gain organization-only fields"
-assert tool_record["used_by"] == ["example-collective"]
-check("the shared builder does not leak organization-only fields into tooling")
 
-for spec, row in ((AF.REGISTRY, AO_ROW), (AF.TOOLING, TOOL_ROW)):
+for spec, row in ((AF.REGISTRY, AO_ROW),):
     validator = Draft202012Validator(SCHEMAS[spec.key], format_checker=FormatChecker())
     sourceless = build_record(
         {"id": "recD", "fields": {**row["fields"], AF.SOURCES_LINK_FIELD: []}}, SOURCES, spec
     )
     assert list(validator.iter_errors(sourceless)), f"{spec.table}: sourceless record must fail"
-check("a record with no sources fails rather than publishing, in both collections")
+check("a record with no sources fails rather than publishing")
 
 
 # --- Table structure --------------------------------------------------------

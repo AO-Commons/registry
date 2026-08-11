@@ -4,17 +4,11 @@ Kept in one place because it's the seam where the two sides of the sync have
 to agree. The other Airtable scripts import it, and a field renamed in
 Airtable is a change here.
 
-Two collections live in this base, deliberately separate:
-
-  Registry — autonomous organizations, where agents hold organizational
-             authority. Validated against schema/ao.schema.json.
-  Tooling  — software that AOs are built on or run with. Validated against
-             schema/tool.schema.json.
-
-A tool is not an AO however many agents it hosts. Merging them would dissolve
-the membership criterion that makes the registry worth citing, so they are
-different schemas with different fields — a tool has no `autonomy_level`, and
-an organization has no `license`.
+One collection lives in this base: Registry, the autonomous organizations
+where agents hold organizational authority. Tooling moved to the
+knowledge-graph repository, where a tool is a Resource — something you
+consult to decide how to build — rather than a second kind of registry
+entry needing its own schema and intake path.
 
 Airtable field names are human-facing (Title Case, spaces); schema keys are
 snake_case. Enum values are stored in Airtable exactly as the schema spells
@@ -45,7 +39,6 @@ RegistryLoader.yaml_implicit_resolvers = {
 
 
 REGISTRY_TABLE = "Registry"
-TOOLING_TABLE = "Tooling"
 SOURCES_TABLE = "Sources"
 INTAKE_TABLE = "Intake"
 
@@ -75,7 +68,6 @@ INTERNAL_ONLY = {
     "Notes",
     "Intake",
     "Registry",
-    "Tooling",
 }
 
 SCHEMA_VERSION = "0.1"
@@ -187,60 +179,5 @@ REGISTRY = Collection(
     ],
 )
 
-TOOLING = Collection(
-    key="tooling",
-    table=TOOLING_TABLE,
-    schema_file="tool.schema.json",
-    data_dir="tools",
-    bundle="tooling.json",
-    simple={
-        "ID *": "id",
-        "Name *": "name",
-        "Summary *": "summary",
-        "Website": "website",
-        "Status *": "status",
-        "Launched": "launched",
-        "Agent Model": "agent_model",
-        "Human Controls": "human_controls",
-        "Maintainer": "maintainer",
-        "Open Source": "open_source",
-        "License": "license",
-        "Self Hostable": "self_hostable",
-        "Model Agnostic": "model_agnostic",
-        "Added": "added",
-        "Updated": "updated",
-    },
-    multi_select={
-        "Categories *": "categories",
-    },
-    comma_lists={
-        "Aliases": "aliases",
-        "Languages": "languages",
-        "Protocols": "protocols",
-        "Used By": "used_by",
-        "Tags": "tags",
-    },
-    links={
-        "Link: Docs": "docs",
-        "Link: Repo": "repo",
-        "Link: Blog": "blog",
-        "Link: Forum": "forum",
-        "Link: X": "x",
-        "Link: Discord": "discord",
-    },
-    verification={
-        "Verification Method *": "method",
-        "Verified On *": "verified_on",
-        "Verified By": "verified_by",
-        "Verification Notes": "notes",
-    },
-    key_order=[
-        "schema_version", "id", "name", "aliases", "summary", "website", "status",
-        "launched", "categories", "agent_model", "human_controls", "maintainer",
-        "open_source", "license", "self_hostable", "model_agnostic", "languages",
-        "protocols", "used_by", "links", "sources", "verification", "tags",
-        "airtable_record_id", "added", "updated",
-    ],
-)
 
-COLLECTIONS = [REGISTRY, TOOLING]
+COLLECTIONS = [REGISTRY]

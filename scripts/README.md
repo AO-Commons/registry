@@ -2,9 +2,8 @@
 
 | Script | Purpose |
 |---|---|
-| [setup_airtable_base.py](setup_airtable_base.py) | Builds the three tables in an empty base. Run once |
+| [setup_airtable_base.py](setup_airtable_base.py) | Builds the tables in an empty base. Run once |
 | [check_airtable_base.py](check_airtable_base.py) | Compares the live base against what the scripts expect. Read-only; worth re-running periodically |
-| [seed_tooling.py](seed_tooling.py) | Creates the first two Tooling records and their sources. Idempotent, and lives here so the provenance of those entries is reviewable |
 | [validate.py](validate.py) | Validates records against the schema and checks id/filename/bundle invariants. Runs in CI |
 | [sync_from_airtable.py](sync_from_airtable.py) | Regenerates `data/` from the Airtable base |
 | [intake_to_airtable.py](intake_to_airtable.py) | Forwards issue-form submissions into the Airtable Intake table |

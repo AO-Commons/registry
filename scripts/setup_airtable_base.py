@@ -33,12 +33,10 @@ from airtable_fields import (
     REGISTRY_TABLE,
     SOURCES_LINK_FIELD,
     SOURCES_TABLE,
-    TOOLING_TABLE,
 )
 
 ROOT = Path(__file__).resolve().parent.parent
 AO_SCHEMA = json.loads((ROOT / "schema" / "ao.schema.json").read_text())
-TOOL_SCHEMA = json.loads((ROOT / "schema" / "tool.schema.json").read_text())
 META = "https://api.airtable.com/v0/meta/bases"
 
 # Applied before fields are created, so an existing base converges onto the
@@ -145,38 +143,6 @@ REGISTRY_FIELDS = [
     text("Notes", "Internal maintainer notes. Never published.", multiline=True),
 ]
 
-TOOLING_FIELDS = [
-    text("ID *", f"{REQUIRED_NOTE} Stable lowercase-hyphenated slug; becomes the published filename."),
-    text("Name *", f"{REQUIRED_NOTE} The tool's own name for itself."),
-    checkbox("Published", "The sync gate. Unchecked records are invisible to the public repo."),
-    select("Status *", enum_of(TOOL_SCHEMA, "status"), description=f"{REQUIRED_NOTE} The tool's maturity and maintenance state."),
-    text("Summary *", f"{REQUIRED_NOTE} At least 20 characters, neutral and descriptive. Vendor copy is a source, not a summary.", multiline=True),
-    url("Website"),
-    text("Aliases", "Former or alternative names, comma-separated."),
-    text("Launched", "First PUBLIC availability, which is often well after the repository was created. YYYY, YYYY-MM, or YYYY-MM-DD."),
-    select("Categories *", enum_of(TOOL_SCHEMA, "categories"), multi=True, description=REQUIRED_NOTE),
-    text("Agent Model", "How agents participate: managed workers, identity-holding peers, orchestrated teams. What shape of organization the tool makes possible — the reason this collection exists.", multiline=True),
-    text("Human Controls", "The oversight primitives the tool ships: budget caps, approval gates, pause and terminate, permission scopes, audit trails. Concrete mechanisms, not assurances. If it provides none, say so — that is a finding.", multiline=True),
-    text("Maintainer", "The organization or project behind the tool. Never an individual."),
-    select("Open Source", enum_of(TOOL_SCHEMA, "open_source"),
-           description="Tri-state, so an unresearched tool is never silently recorded as proprietary."),
-    text("License", "SPDX identifier (MIT, Apache-2.0, AGPL-3.0) or 'proprietary'."),
-    select("Self Hostable", enum_of(TOOL_SCHEMA, "self_hostable")),
-    select("Model Agnostic", enum_of(TOOL_SCHEMA, "model_agnostic")),
-    text("Languages", "Primary implementation languages, comma-separated."),
-    text("Protocols", "Open protocols the tool speaks (nostr, mcp, a2a), comma-separated."),
-    text("Used By", "Registry ID slugs of AOs known to run on this, comma-separated. The cross-link between the two collections."),
-    url("Link: Docs"), url("Link: Repo"), url("Link: Blog"), url("Link: Forum"),
-    url("Link: X"), url("Link: Discord"),
-    select("Verification Method *", enum_of(TOOL_SCHEMA, "verification", "properties", "method"), description=REQUIRED_NOTE),
-    date("Verified On *", REQUIRED_NOTE),
-    text("Verified By", "Role or handle of the reviewer — never personal contact details."),
-    text("Verification Notes", multiline=True),
-    text("Tags", "Comma-separated, lowercase-hyphenated."),
-    date("Added"), date("Updated"),
-    REVIEW_STATE,
-    text("Notes", "Internal maintainer notes. Never published.", multiline=True),
-]
 
 SOURCES_FIELDS = [
     url("URL *", REQUIRED_NOTE),
@@ -190,11 +156,11 @@ INTAKE_FIELDS = [
     {"name": "Issue Number", "type": "number", "options": {"precision": 0},
      "description": "The upsert key — an edited issue updates its row rather than creating a second."},
     url("Issue URL"),
-    select("Type", [{"name": "New AO"}, {"name": "New Tool"}, {"name": "Correction"}]),
+    select("Type", [{"name": "New AO"}, {"name": "Correction"}]),
     select("Status", [
         {"name": "New"}, {"name": "In review"}, {"name": "Needs info"},
         {"name": "Accepted"}, {"name": "Declined"}, {"name": "Duplicate"},
-    ], description="Set by reviewers. The sync never reads this table — acceptance means copying into Registry or Tooling."),
+    ], description="Set by reviewers. The sync never reads this table — acceptance means copying into Registry."),
     text("Organization Name", "The name of whatever was submitted — organization or tool."),
     url("Website"),
     text("Summary", multiline=True),
@@ -214,7 +180,6 @@ INTAKE_FIELDS = [
 
 TABLES = [
     (REGISTRY_TABLE, "One row per autonomous organization — agents holding organizational authority. Rows with Published checked sync to github.com/AO-Commons/registry.", REGISTRY_FIELDS),
-    (TOOLING_TABLE, "Software that AOs are built on or run with. A tool is NOT an autonomous organization however many agents it hosts — that distinction is what makes the Registry worth citing.", TOOLING_FIELDS),
     (SOURCES_TABLE, "Evidence for claims in both collections. Every published record needs at least one.", SOURCES_FIELDS),
     (INTAKE_TABLE, "Submissions from the GitHub issue forms, awaiting review. Deliberately separate: a submission is a claim, a published record is a verified claim.", INTAKE_FIELDS),
 ]
@@ -232,17 +197,9 @@ BLOCKERS = {
         ("Verified On *", "single", "VerifiedOn"),
         (SOURCES_LINK_FIELD, "multi", "Sources"),
     ],
-    TOOLING_TABLE: [
-        ("ID *", "single", "ID"), ("Name *", "single", "Name"),
-        ("Summary *", "length20", "Summary(20+)"), ("Status *", "single", "Status"),
-        ("Categories *", "multi", "Categories"),
-        ("Verification Method *", "single", "VerificationMethod"),
-        ("Verified On *", "single", "VerifiedOn"),
-        (SOURCES_LINK_FIELD, "multi", "Sources"),
-    ],
 }
 
-LINKED_TABLES = [REGISTRY_TABLE, TOOLING_TABLE]
+LINKED_TABLES = [REGISTRY_TABLE]
 
 
 def api(method: str, path: str, token: str, **kwargs) -> dict:

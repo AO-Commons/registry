@@ -27,7 +27,6 @@ DATA_ROOT = ROOT / "data"
 # invalidates the documented example means the docs are now wrong.
 EXAMPLES = {
     "registry": "example.yml",
-    "tooling": "example-tool.yml",
 }
 
 errors: list[str] = []
